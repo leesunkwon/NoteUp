@@ -288,7 +288,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun List<Stroke>.containsAllDrafts(drafts: List<StrokeDraft>): Boolean {
         val candidates = toMutableList()
         return drafts.all { draft ->
-            val index = candidates.indexOfFirst(draft::matches)
+            val index = candidates.indexOfFirst { stroke -> draft.matches(stroke) }
             if (index < 0) false else {
                 candidates.removeAt(index)
                 true
