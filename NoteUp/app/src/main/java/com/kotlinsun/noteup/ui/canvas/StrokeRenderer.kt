@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import com.kotlinsun.noteup.domain.model.StrokePoint
+import com.kotlinsun.noteup.domain.model.StrokeTool
 
 class StrokeRenderer {
     private val segmentPath = Path()
@@ -21,8 +22,14 @@ class StrokeRenderer {
         canvasWidth: Int,
         canvasHeight: Int,
         density: Float,
+        tool: StrokeTool,
     ) {
         if (points.isEmpty() || canvasWidth <= 0 || canvasHeight <= 0) return
+
+        if (tool == StrokeTool.HIGHLIGHTER) {
+            drawHighlighter(canvas, points, colorArgb, baseWidthDp, canvasWidth, canvasHeight, density)
+            return
+        }
 
         paint.color = colorArgb
         val first = points.first()
@@ -76,8 +83,49 @@ class StrokeRenderer {
         canvas.drawPath(segmentPath, paint)
     }
 
+    private fun drawHighlighter(
+        canvas: Canvas,
+        points: List<StrokePoint>,
+        colorArgb: Int,
+        baseWidthDp: Float,
+        canvasWidth: Int,
+        canvasHeight: Int,
+        density: Float,
+    ) {
+        val first = points.first()
+        val firstX = first.x * canvasWidth
+        val firstY = first.y * canvasHeight
+        paint.color = colorArgb
+        paint.strokeWidth = baseWidthDp * density
+
+        if (points.all { it.x == first.x && it.y == first.y }) {
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(firstX, firstY, paint.strokeWidth / 2f, paint)
+            paint.style = Paint.Style.STROKE
+            return
+        }
+
+        segmentPath.reset()
+        segmentPath.moveTo(firstX, firstY)
+        var previousX = firstX
+        var previousY = firstY
+        for (pointIndex in 1 until points.size) {
+            val point = points[pointIndex]
+            val x = point.x * canvasWidth
+            val y = point.y * canvasHeight
+            segmentPath.quadTo(previousX, previousY, (previousX + x) / 2f, (previousY + y) / 2f)
+            previousX = x
+            previousY = y
+        }
+        segmentPath.lineTo(previousX, previousY)
+        canvas.drawPath(segmentPath, paint)
+    }
+
     fun maximumStrokeWidthPx(density: Float): Float =
-        MAXIMUM_BASE_WIDTH_DP * MAXIMUM_PRESSURE_FACTOR * density
+        maxOf(
+            MAXIMUM_PEN_WIDTH_DP * MAXIMUM_PRESSURE_FACTOR,
+            MAXIMUM_HIGHLIGHTER_WIDTH_DP,
+        ) * density
 
     private fun smoothPressure(previous: Float, current: Float): Float =
         previous + (normalizePressure(current) - previous) * PRESSURE_SMOOTHING_FACTOR
@@ -106,6 +154,7 @@ class StrokeRenderer {
         const val MINIMUM_PRESSURE_FACTOR = 0.45f
         const val MAXIMUM_PRESSURE_FACTOR = 1.55f
         const val PRESSURE_SMOOTHING_FACTOR = 0.25f
-        const val MAXIMUM_BASE_WIDTH_DP = 7f
+        const val MAXIMUM_PEN_WIDTH_DP = 7f
+        const val MAXIMUM_HIGHLIGHTER_WIDTH_DP = 28f
     }
 }

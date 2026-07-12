@@ -16,4 +16,8 @@
     <color name="pen_blue">#2563EB</color>
     <color name="pen_red">#DC2626</color>
     <color name="pen_green">#16803C</color>
+    <color name="highlighter_yellow">#FFEB3B</color>
+    <color name="highlighter_green">#66BB6A</color>
+    <color name="highlighter_pink">#EC407A</color>
+    <color name="highlighter_blue">#42A5F5</color>
 </resources>

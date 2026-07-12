@@ -27,6 +27,8 @@ interface NoteRepository {
     suspend fun createPage(noteId: Long, template: PageTemplate): Long
     suspend fun updatePageTemplate(pageId: Long, template: PageTemplate)
     suspend fun deletePage(pageId: Long)
-    suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Long
+    suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Stroke
+    suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>)
+    suspend fun restoreStrokes(noteId: Long, strokes: List<Stroke>)
     suspend fun clearStrokes(noteId: Long, pageId: Long)
 }

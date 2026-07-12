@@ -12,5 +12,8 @@ sealed interface CanvasUiState {
         val page: Page,
         val strokes: List<Stroke>,
         val isSaving: Boolean,
+        val isBusy: Boolean,
+        val canUndo: Boolean,
+        val canRedo: Boolean,
     ) : CanvasUiState
 }

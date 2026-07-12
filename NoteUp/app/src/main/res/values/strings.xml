@@ -50,4 +50,13 @@
     <string name="pen_thin">얇게</string>
     <string name="pen_medium">보통</string>
     <string name="pen_thick">굵게</string>
+    <string name="highlighter_tool">형광펜</string>
+    <string name="eraser_tool">지우개</string>
+    <string name="undo">실행 취소</string>
+    <string name="redo">다시 실행</string>
+    <string name="highlighter_color_yellow">노란색 형광펜</string>
+    <string name="highlighter_color_green">초록색 형광펜</string>
+    <string name="highlighter_color_pink">분홍색 형광펜</string>
+    <string name="highlighter_color_blue">파란색 형광펜</string>
+    <string name="stroke_operation_error">필기 작업을 완료하지 못했습니다.</string>
 </resources>

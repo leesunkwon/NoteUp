@@ -131,22 +131,42 @@ class LocalNoteRepository(
         noteId: Long,
         pageId: Long,
         stroke: StrokeDraft,
-    ): Long = database.withTransaction {
+    ): Stroke = database.withTransaction {
         require(stroke.points.size >= 2) { "A stroke requires at least two points" }
         val now = System.currentTimeMillis()
-        val strokeId = strokeDao.insert(
-            StrokeEntity(
-                pageId = pageId,
-                strokeIndex = strokeDao.nextStrokeIndex(pageId),
-                toolType = stroke.tool.name,
-                colorArgb = stroke.colorArgb,
-                strokeWidth = stroke.width,
-                points = StrokePointCodec.encode(stroke.points),
-                createdAt = now,
-            ),
+        val strokeIndex = strokeDao.nextStrokeIndex(pageId)
+        val entity = StrokeEntity(
+            pageId = pageId,
+            strokeIndex = strokeIndex,
+            toolType = stroke.tool.name,
+            colorArgb = stroke.colorArgb,
+            strokeWidth = stroke.width,
+            points = StrokePointCodec.encode(stroke.points),
+            createdAt = now,
         )
+        val strokeId = strokeDao.insert(entity)
         noteDao.touch(noteId, now)
-        strokeId
+        entity.copy(id = strokeId).toDomainOrNull()
+            ?: error("Saved stroke could not be decoded")
+    }
+
+    override suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>) {
+        if (strokes.isEmpty()) return
+        database.withTransaction {
+            strokeDao.deleteByIds(strokes.map(Stroke::id).distinct())
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun restoreStrokes(noteId: Long, strokes: List<Stroke>) {
+        if (strokes.isEmpty()) return
+        database.withTransaction {
+            val restoredIds = strokeDao.insertAll(
+                strokes.distinctBy(Stroke::id).map { it.toEntity() },
+            )
+            check(restoredIds.none { it == -1L }) { "A stroke could not be restored" }
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
     }
 
     override suspend fun clearStrokes(noteId: Long, pageId: Long) {
@@ -192,4 +212,15 @@ class LocalNoteRepository(
             createdAt = createdAt,
         )
     }.getOrNull()
+
+    private fun Stroke.toEntity() = StrokeEntity(
+        id = id,
+        pageId = pageId,
+        strokeIndex = strokeIndex,
+        toolType = tool.name,
+        colorArgb = colorArgb,
+        strokeWidth = width,
+        points = StrokePointCodec.encode(points),
+        createdAt = createdAt,
+    )
 }
