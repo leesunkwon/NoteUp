@@ -269,10 +269,12 @@ class DrawingCanvasView @JvmOverloads constructor(
                     dx * dx + dy * dy <= areaCollisionRadius(draft, density).let { it * it }
                 }
                 if (erased) {
-                    if (keptGroups.lastOrNull()?.isEmpty() == false) keptGroups += mutableListOf()
+                    if (keptGroups.lastOrNull()?.isEmpty() == false) {
+                        keptGroups.add(mutableListOf())
+                    }
                 } else {
-                    if (keptGroups.isEmpty()) keptGroups += mutableListOf()
-                    keptGroups.last() += point
+                    if (keptGroups.isEmpty()) keptGroups.add(mutableListOf())
+                    keptGroups.last().add(point)
                 }
             }
             val fragments = keptGroups.filter { it.isNotEmpty() }.map { points ->
