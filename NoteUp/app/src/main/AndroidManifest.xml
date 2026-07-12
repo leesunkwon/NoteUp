@@ -11,6 +11,7 @@
         android:xlargeScreens="true" />
 
     <application
+        android:name=".NoteUpApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

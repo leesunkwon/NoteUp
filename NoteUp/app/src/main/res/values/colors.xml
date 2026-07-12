@@ -8,4 +8,8 @@
     <color name="noteup_surface">#FFFFFFFF</color>
     <color name="noteup_on_surface">#202522</color>
     <color name="noteup_outline">#D9DED9</color>
+    <color name="noteup_sidebar">#F3F5F1</color>
+    <color name="noteup_sidebar_selected">#DCE9E2</color>
+    <color name="noteup_preview_line">#E7EBE7</color>
+    <color name="noteup_secondary_text">#66706A</color>
 </resources>

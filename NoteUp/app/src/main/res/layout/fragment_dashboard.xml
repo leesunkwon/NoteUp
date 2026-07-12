@@ -1,50 +1,142 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/noteup_background"
-    android:padding="@dimen/screen_content_padding"
+    android:orientation="horizontal"
     tools:context=".ui.dashboard.DashboardFragment">
 
-    <TextView
-        android:id="@+id/dashboard_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/dashboard_title"
-        android:textAppearance="@style/TextAppearance.NoteUp.Title"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+    <LinearLayout
+        android:layout_width="@dimen/sidebar_width"
+        android:layout_height="match_parent"
+        android:background="@color/noteup_sidebar"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_large">
 
-    <TextView
-        android:id="@+id/dashboard_description"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_small"
-        android:text="@string/dashboard_description"
-        android:textAppearance="@style/TextAppearance.NoteUp.Body"
-        app:layout_constraintStart_toStartOf="@id/dashboard_title"
-        app:layout_constraintTop_toBottomOf="@id/dashboard_title" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/dashboard_title"
+            android:textAppearance="@style/TextAppearance.NoteUp.Title" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/open_canvas_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_large"
-        android:text="@string/open_canvas"
-        app:layout_constraintStart_toStartOf="@id/dashboard_description"
-        app:layout_constraintTop_toBottomOf="@id/dashboard_description" />
+        <TextView
+            android:id="@+id/all_notes_button"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/sidebar_item_height"
+            android:layout_marginTop="@dimen/spacing_large"
+            android:background="@drawable/bg_sidebar_item"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/spacing_medium"
+            android:text="@string/all_notes"
+            android:textAppearance="@style/TextAppearance.NoteUp.Body" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/open_settings_button"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/spacing_medium"
-        android:text="@string/open_settings"
-        app:layout_constraintBottom_toBottomOf="@id/open_canvas_button"
-        app:layout_constraintStart_toEndOf="@id/open_canvas_button"
-        app:layout_constraintTop_toTopOf="@id/open_canvas_button" />
+        <TextView
+            android:id="@+id/unfiled_notes_button"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/sidebar_item_height"
+            android:background="@drawable/bg_sidebar_item"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/spacing_medium"
+            android:text="@string/unfiled_notes"
+            android:textAppearance="@style/TextAppearance.NoteUp.Body" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_medium"
+            android:layout_marginTop="@dimen/spacing_large"
+            android:text="@string/notebooks"
+            android:textColor="@color/noteup_secondary_text"
+            android:textStyle="bold" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/notebook_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            tools:listitem="@layout/item_notebook" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/add_notebook_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/add_notebook" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/open_settings_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/open_settings" />
+    </LinearLayout>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:padding="@dimen/screen_content_padding">
+
+        <TextView
+            android:id="@+id/content_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.NoteUp.Title"
+            app:layout_constraintEnd_toStartOf="@id/new_note_button"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="모든 노트" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/new_note_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/new_note"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/note_grid"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/spacing_large"
+            android:clipToPadding="false"
+            android:paddingBottom="@dimen/spacing_large"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/new_note_button"
+            tools:listitem="@layout/item_note" />
+
+        <LinearLayout
+            android:id="@+id/empty_state"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:visibility="visible">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/empty_notes_title"
+                android:textAppearance="@style/TextAppearance.NoteUp.Title" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:text="@string/empty_notes_description"
+                android:textAppearance="@style/TextAppearance.NoteUp.Body" />
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>
