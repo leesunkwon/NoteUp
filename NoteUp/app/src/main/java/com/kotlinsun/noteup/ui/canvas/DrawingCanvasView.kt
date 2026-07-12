@@ -216,7 +216,7 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun invalidateDirtySegment(fromX: Float, fromY: Float, toX: Float, toY: Float) {
         val padding = dirtyPadding()
-        invalidate(
+        postInvalidateOnAnimation(
             (min(fromX, toX) - padding).toInt(),
             (min(fromY, toY) - padding).toInt(),
             ceil(max(fromX, toX) + padding).toInt(),
@@ -226,7 +226,7 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun invalidateDirtyBounds(bounds: RectF) {
         val padding = dirtyPadding()
-        invalidate(
+        postInvalidateOnAnimation(
             (bounds.left - padding).toInt(),
             (bounds.top - padding).toInt(),
             ceil(bounds.right + padding).toInt(),

@@ -57,8 +57,7 @@
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/pen_tool"
-                    app:checkable="true" />
+                    android:text="@string/pen_tool" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/black_color_button"
@@ -130,24 +129,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="@dimen/spacing_small"
-                    android:text="@string/pen_thin"
-                    app:checkable="true" />
+                    android:text="@string/pen_thin" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/medium_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/pen_medium"
-                    app:checkable="true" />
+                    android:text="@string/pen_medium" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/thick_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/pen_thick"
-                    app:checkable="true" />
+                    android:text="@string/pen_thick" />
             </LinearLayout>
         </HorizontalScrollView>
 

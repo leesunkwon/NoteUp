@@ -57,6 +57,10 @@ class CanvasFragment : Fragment() {
     }
 
     private fun setupPenToolbar() = with(binding) {
+        penToolButton.isCheckable = true
+        thinButton.isCheckable = true
+        mediumButton.isCheckable = true
+        thickButton.isCheckable = true
         penToolButton.isChecked = true
         penToolButton.setOnClickListener { penToolButton.isChecked = true }
         blackColorButton.setOnClickListener { viewModel.selectColor(PenColor.BLACK) }
