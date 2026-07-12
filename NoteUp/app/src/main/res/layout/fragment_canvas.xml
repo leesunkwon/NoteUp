@@ -60,6 +60,20 @@
                     android:text="@string/pen_tool" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/highlighter_tool_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/highlighter_tool" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/eraser_tool_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/eraser_tool" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/black_color_button"
                     android:layout_width="@dimen/pen_color_button_size"
                     android:layout_height="@dimen/pen_color_button_size"
@@ -124,6 +138,23 @@
                     app:strokeColor="@color/noteup_on_surface" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/stroke_eraser_mode_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:text="@string/stroke_eraser_mode"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/area_eraser_mode_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/area_eraser_mode"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/thin_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
@@ -144,6 +175,23 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/pen_thick" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/undo_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:enabled="false"
+                    android:text="@string/undo" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/redo_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:enabled="false"
+                    android:text="@string/redo" />
             </LinearLayout>
         </HorizontalScrollView>
 

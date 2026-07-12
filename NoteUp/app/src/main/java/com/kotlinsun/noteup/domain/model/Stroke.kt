@@ -27,4 +27,5 @@ data class StrokePoint(
 
 enum class StrokeTool {
     PEN,
+    HIGHLIGHTER,
 }
