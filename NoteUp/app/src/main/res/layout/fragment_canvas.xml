@@ -38,10 +38,120 @@
             android:textStyle="bold"
             tools:text="새 노트" />
 
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginHorizontal="@dimen/spacing_small"
+            android:layout_weight="2"
+            android:fillViewport="false"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pen_tool_button"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pen_tool" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/black_color_button"
+                    android:layout_width="@dimen/pen_color_button_size"
+                    android:layout_height="@dimen/pen_color_button_size"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:contentDescription="@string/pen_color_black"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    app:backgroundTint="@color/pen_black"
+                    app:cornerRadius="@dimen/pen_color_corner_radius"
+                    app:strokeColor="@color/noteup_on_surface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/blue_color_button"
+                    android:layout_width="@dimen/pen_color_button_size"
+                    android:layout_height="@dimen/pen_color_button_size"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:contentDescription="@string/pen_color_blue"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    app:backgroundTint="@color/pen_blue"
+                    app:cornerRadius="@dimen/pen_color_corner_radius"
+                    app:strokeColor="@color/noteup_on_surface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/red_color_button"
+                    android:layout_width="@dimen/pen_color_button_size"
+                    android:layout_height="@dimen/pen_color_button_size"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:contentDescription="@string/pen_color_red"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    app:backgroundTint="@color/pen_red"
+                    app:cornerRadius="@dimen/pen_color_corner_radius"
+                    app:strokeColor="@color/noteup_on_surface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/green_color_button"
+                    android:layout_width="@dimen/pen_color_button_size"
+                    android:layout_height="@dimen/pen_color_button_size"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:contentDescription="@string/pen_color_green"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    app:backgroundTint="@color/pen_green"
+                    app:cornerRadius="@dimen/pen_color_corner_radius"
+                    app:strokeColor="@color/noteup_on_surface" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/thin_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:text="@string/pen_thin" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/medium_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pen_medium" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/thick_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pen_thick" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
         <TextView
             android:id="@+id/save_status"
-            android:layout_width="wrap_content"
+            android:layout_width="@dimen/save_status_width"
             android:layout_height="wrap_content"
+            android:gravity="end|center_vertical"
             android:text="@string/saved"
             android:textColor="@color/noteup_secondary_text" />
     </LinearLayout>

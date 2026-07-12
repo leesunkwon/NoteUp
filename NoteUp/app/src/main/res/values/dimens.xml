@@ -12,5 +12,9 @@
     <dimen name="note_card_width">220dp</dimen>
     <dimen name="note_preview_height">150dp</dimen>
     <dimen name="card_corner_radius">16dp</dimen>
-    <dimen name="canvas_toolbar_height">64dp</dimen>
+    <dimen name="canvas_toolbar_height">72dp</dimen>
+    <dimen name="pen_color_button_size">40dp</dimen>
+    <dimen name="pen_color_corner_radius">20dp</dimen>
+    <dimen name="pen_selected_stroke_width">3dp</dimen>
+    <dimen name="save_status_width">72dp</dimen>
 </resources>
