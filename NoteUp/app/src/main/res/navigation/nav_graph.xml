@@ -19,7 +19,11 @@
     <fragment
         android:id="@+id/canvasFragment"
         android:name="com.kotlinsun.noteup.ui.canvas.CanvasFragment"
-        android:label="@string/canvas_title" />
+        android:label="@string/canvas_title">
+        <argument
+            android:name="noteId"
+            app:argType="long" />
+    </fragment>
 
     <fragment
         android:id="@+id/settingsFragment"

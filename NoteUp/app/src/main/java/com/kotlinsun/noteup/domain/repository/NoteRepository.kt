@@ -1,0 +1,25 @@
+package com.kotlinsun.noteup.domain.repository
+
+import com.kotlinsun.noteup.domain.model.Note
+import com.kotlinsun.noteup.domain.model.Notebook
+import com.kotlinsun.noteup.domain.model.Page
+import com.kotlinsun.noteup.domain.model.PageTemplate
+import kotlinx.coroutines.flow.Flow
+
+interface NoteRepository {
+    fun observeNotebooks(): Flow<List<Notebook>>
+    fun observeAllNotes(): Flow<List<Note>>
+    fun observeUnfiledNotes(): Flow<List<Note>>
+    fun observeNotes(notebookId: Long): Flow<List<Note>>
+    fun observePages(noteId: Long): Flow<List<Page>>
+    suspend fun createNotebook(name: String): Long
+    suspend fun renameNotebook(notebookId: Long, name: String)
+    suspend fun deleteNotebook(notebookId: Long)
+    suspend fun createNote(title: String, notebookId: Long?): Long
+    suspend fun renameNote(noteId: Long, title: String)
+    suspend fun moveNote(noteId: Long, notebookId: Long?)
+    suspend fun deleteNote(noteId: Long)
+    suspend fun createPage(noteId: Long, template: PageTemplate): Long
+    suspend fun updatePageTemplate(pageId: Long, template: PageTemplate)
+    suspend fun deletePage(pageId: Long)
+}

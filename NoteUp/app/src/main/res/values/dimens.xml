@@ -7,4 +7,9 @@
     <dimen name="screen_content_padding">32dp</dimen>
     <dimen name="text_size_body">16sp</dimen>
     <dimen name="text_size_title">32sp</dimen>
+    <dimen name="sidebar_width">280dp</dimen>
+    <dimen name="sidebar_item_height">48dp</dimen>
+    <dimen name="note_card_width">220dp</dimen>
+    <dimen name="note_preview_height">150dp</dimen>
+    <dimen name="card_corner_radius">16dp</dimen>
 </resources>
