@@ -3,6 +3,10 @@ package com.kotlinsun.noteup.ui.canvas
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.kotlinsun.noteup.data.preferences.PenSettingsStore
+import com.kotlinsun.noteup.domain.model.PenColor
+import com.kotlinsun.noteup.domain.model.PenSettings
+import com.kotlinsun.noteup.domain.model.PenThickness
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,12 +23,14 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CanvasViewModel(
     private val noteId: Long,
     private val repository: NoteRepository,
+    private val penSettingsStore: PenSettingsStore,
 ) : ViewModel() {
 
     private val pendingSaves = MutableStateFlow(0)
@@ -32,6 +38,8 @@ class CanvasViewModel(
     private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _errors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val errors: Flow<Unit> = _errors
+    private val _penSettings = MutableStateFlow(penSettingsStore.load())
+    val penSettings = _penSettings.asStateFlow()
 
     private val content = combine(
         repository.observeNote(noteId),
@@ -93,6 +101,19 @@ class CanvasViewModel(
         }
     }
 
+    fun selectColor(color: PenColor) {
+        updatePenSettings(_penSettings.value.copy(color = color))
+    }
+
+    fun selectThickness(thickness: PenThickness) {
+        updatePenSettings(_penSettings.value.copy(thickness = thickness))
+    }
+
+    private fun updatePenSettings(settings: PenSettings) {
+        _penSettings.value = settings
+        penSettingsStore.save(settings)
+    }
+
     override fun onCleared() {
         saveQueue.close()
         super.onCleared()
@@ -107,9 +128,10 @@ class CanvasViewModel(
     class Factory(
         private val noteId: Long,
         private val repository: NoteRepository,
+        private val penSettingsStore: PenSettingsStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CanvasViewModel(noteId, repository) as T
+            CanvasViewModel(noteId, repository, penSettingsStore) as T
     }
 }

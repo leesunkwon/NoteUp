@@ -12,4 +12,8 @@
     <color name="noteup_sidebar_selected">#DCE9E2</color>
     <color name="noteup_preview_line">#E7EBE7</color>
     <color name="noteup_secondary_text">#66706A</color>
+    <color name="pen_black">#202124</color>
+    <color name="pen_blue">#2563EB</color>
+    <color name="pen_red">#DC2626</color>
+    <color name="pen_green">#16803C</color>
 </resources>

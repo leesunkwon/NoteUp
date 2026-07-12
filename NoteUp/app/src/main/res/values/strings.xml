@@ -42,4 +42,12 @@
     <string name="saved">저장됨</string>
     <string name="canvas_not_found_title">노트를 열 수 없습니다</string>
     <string name="canvas_not_found_description">노트 또는 페이지가 삭제되었는지 확인해 주세요.</string>
+    <string name="pen_tool">펜</string>
+    <string name="pen_color_black">검정색 펜</string>
+    <string name="pen_color_blue">파란색 펜</string>
+    <string name="pen_color_red">빨간색 펜</string>
+    <string name="pen_color_green">초록색 펜</string>
+    <string name="pen_thin">얇게</string>
+    <string name="pen_medium">보통</string>
+    <string name="pen_thick">굵게</string>
 </resources>
