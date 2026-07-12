@@ -149,8 +149,9 @@
 
         <TextView
             android:id="@+id/save_status"
-            android:layout_width="wrap_content"
+            android:layout_width="@dimen/save_status_width"
             android:layout_height="wrap_content"
+            android:gravity="end|center_vertical"
             android:text="@string/saved"
             android:textColor="@color/noteup_secondary_text" />
     </LinearLayout>

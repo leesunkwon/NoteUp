@@ -16,4 +16,5 @@
     <dimen name="pen_color_button_size">40dp</dimen>
     <dimen name="pen_color_corner_radius">20dp</dimen>
     <dimen name="pen_selected_stroke_width">3dp</dimen>
+    <dimen name="save_status_width">72dp</dimen>
 </resources>
