@@ -5,25 +5,91 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/noteup_surface"
-    android:padding="@dimen/screen_content_padding"
     tools:context=".ui.canvas.CanvasFragment">
 
-    <TextView
-        android:id="@+id/canvas_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/canvas_title"
-        android:textAppearance="@style/TextAppearance.NoteUp.Title"
+    <LinearLayout
+        android:id="@+id/canvas_toolbar"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/canvas_toolbar_height"
+        android:background="@color/noteup_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/spacing_medium"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <TextView
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/back_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/back" />
+
+        <TextView
+            android:id="@+id/note_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_medium"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="@style/TextAppearance.NoteUp.Body"
+            android:textStyle="bold"
+            tools:text="새 노트" />
+
+        <TextView
+            android:id="@+id/save_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/saved"
+            android:textColor="@color/noteup_secondary_text" />
+    </LinearLayout>
+
+    <com.kotlinsun.noteup.ui.canvas.DrawingCanvasView
+        android:id="@+id/drawing_canvas"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/noteup_surface"
+        android:contentDescription="@string/canvas_title"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar" />
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/loading_indicator"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_small"
-        android:text="@string/canvas_placeholder"
-        android:textAppearance="@style/TextAppearance.NoteUp.Body"
-        app:layout_constraintStart_toStartOf="@id/canvas_title"
-        app:layout_constraintTop_toBottomOf="@id/canvas_title" />
+        app:layout_constraintBottom_toBottomOf="@id/drawing_canvas"
+        app:layout_constraintEnd_toEndOf="@id/drawing_canvas"
+        app:layout_constraintStart_toStartOf="@id/drawing_canvas"
+        app:layout_constraintTop_toTopOf="@id/drawing_canvas" />
 
+    <LinearLayout
+        android:id="@+id/not_found_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/drawing_canvas"
+        app:layout_constraintEnd_toEndOf="@id/drawing_canvas"
+        app:layout_constraintStart_toStartOf="@id/drawing_canvas"
+        app:layout_constraintTop_toTopOf="@id/drawing_canvas"
+        tools:visibility="visible">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/canvas_not_found_title"
+            android:textAppearance="@style/TextAppearance.NoteUp.Title" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:text="@string/canvas_not_found_description"
+            android:textAppearance="@style/TextAppearance.NoteUp.Body" />
+    </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
