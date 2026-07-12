@@ -12,3 +12,8 @@ sealed interface ErasableStroke {
     data class Persisted(val stroke: Stroke) : ErasableStroke
     data class Pending(val stroke: PendingCanvasStroke) : ErasableStroke
 }
+
+data class AreaEraseReplacement(
+    val target: ErasableStroke,
+    val fragments: List<StrokeDraft>,
+)

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
+import com.kotlinsun.noteup.domain.model.EraserMode
 import com.kotlinsun.noteup.domain.model.HighlighterColor
 import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.PenColor
@@ -122,6 +123,17 @@ class CanvasViewModel(
         enqueue(CanvasOperation.Erase(strokes))
     }
 
+    fun eraseArea(replacements: List<AreaEraseReplacement>) {
+        if (replacements.isEmpty()) return
+        replacements.forEach { replacement ->
+            when (val target = replacement.target) {
+                is ErasableStroke.Persisted -> suppress(target.stroke.id)
+                is ErasableStroke.Pending -> tokensScheduledForErase += target.stroke.token
+            }
+        }
+        enqueue(CanvasOperation.AreaErase(replacements))
+    }
+
     fun undo() {
         if (pendingOperations.value == 0 && historyState.value.canUndo) enqueue(CanvasOperation.Undo)
     }
@@ -131,6 +143,7 @@ class CanvasViewModel(
     }
 
     fun selectTool(tool: DrawingTool) = updateSettings(_settings.value.copy(tool = tool))
+    fun selectEraserMode(mode: EraserMode) = updateSettings(_settings.value.copy(eraserMode = mode))
     fun selectPenColor(color: PenColor) = updateSettings(
         _settings.value.copy(pen = _settings.value.pen.copy(color = color)),
     )
@@ -149,6 +162,7 @@ class CanvasViewModel(
             when (operation) {
                 is CanvasOperation.Add -> processAdd(operation.stroke, operation.pageId)
                 is CanvasOperation.Erase -> processErase(operation.targets)
+                is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
                 CanvasOperation.Undo -> processUndo()
                 CanvasOperation.Redo -> processRedo()
             }
@@ -183,6 +197,24 @@ class CanvasViewModel(
         pushNewCommand(CanvasCommand.DeleteStrokes(strokes))
     }
 
+    private suspend fun processAreaErase(replacements: List<AreaEraseReplacement>) {
+        val resolved = replacements.mapNotNull { replacement ->
+            val stroke = when (val target = replacement.target) {
+                is ErasableStroke.Persisted -> target.stroke
+                is ErasableStroke.Pending -> tokenToStroke[target.stroke.token]
+            }
+            stroke?.let { it to replacement.fragments }
+        }
+        replacements.map { it.target }.filterIsInstance<ErasableStroke.Pending>().forEach {
+            tokensScheduledForErase -= it.stroke.token
+        }
+        if (resolved.isEmpty()) return
+        val removed = resolved.map { it.first }.distinctBy(Stroke::id)
+        removed.forEach { suppress(it.id) }
+        val added = repository.replaceStrokes(noteId, removed, resolved.flatMap { it.second })
+        pushNewCommand(CanvasCommand.ReplaceStrokes(removed, added))
+    }
+
     private suspend fun processUndo() {
         val command = undoStack.peekLast() ?: return
         applyInverse(command)
@@ -209,6 +241,12 @@ class CanvasViewModel(
                 command.strokes.forEach { suppress(it.id) }
                 repository.deleteStrokes(noteId, command.strokes)
             }
+            is CanvasCommand.ReplaceStrokes -> {
+                command.before.forEach { suppress(it.id) }
+                command.after.forEach { unsuppress(it.id) }
+                repository.deleteStrokes(noteId, command.before)
+                repository.restoreStrokes(noteId, command.after)
+            }
         }
     }
 
@@ -221,6 +259,12 @@ class CanvasViewModel(
             is CanvasCommand.DeleteStrokes -> {
                 command.strokes.forEach { unsuppress(it.id) }
                 repository.restoreStrokes(noteId, command.strokes)
+            }
+            is CanvasCommand.ReplaceStrokes -> {
+                command.after.forEach { suppress(it.id) }
+                command.before.forEach { unsuppress(it.id) }
+                repository.deleteStrokes(noteId, command.after)
+                repository.restoreStrokes(noteId, command.before)
             }
         }
     }
@@ -243,6 +287,15 @@ class CanvasViewModel(
                     }
                 }
             }
+            is CanvasOperation.AreaErase -> operation.replacements.forEach { replacement ->
+                when (val target = replacement.target) {
+                    is ErasableStroke.Persisted -> unsuppress(target.stroke.id)
+                    is ErasableStroke.Pending -> {
+                        tokensScheduledForErase -= target.stroke.token
+                        tokenToStroke[target.stroke.token]?.let { unsuppress(it.id) }
+                    }
+                }
+            }
             CanvasOperation.Undo -> rollbackUndo()
             CanvasOperation.Redo -> rollbackRedo()
         }
@@ -252,6 +305,10 @@ class CanvasViewModel(
         when (val command = undoStack.peekLast()) {
             is CanvasCommand.AddStroke -> unsuppress(command.stroke.id)
             is CanvasCommand.DeleteStrokes -> command.strokes.forEach { suppress(it.id) }
+            is CanvasCommand.ReplaceStrokes -> {
+                command.before.forEach { suppress(it.id) }
+                command.after.forEach { unsuppress(it.id) }
+            }
             null -> Unit
         }
     }
@@ -260,6 +317,10 @@ class CanvasViewModel(
         when (val command = redoStack.peekLast()) {
             is CanvasCommand.AddStroke -> suppress(command.stroke.id)
             is CanvasCommand.DeleteStrokes -> command.strokes.forEach { unsuppress(it.id) }
+            is CanvasCommand.ReplaceStrokes -> {
+                command.before.forEach { unsuppress(it.id) }
+                command.after.forEach { suppress(it.id) }
+            }
             null -> Unit
         }
     }
@@ -297,6 +358,7 @@ class CanvasViewModel(
     private sealed interface CanvasOperation {
         data class Add(val stroke: PendingCanvasStroke, val pageId: Long) : CanvasOperation
         data class Erase(val targets: List<ErasableStroke>) : CanvasOperation
+        data class AreaErase(val replacements: List<AreaEraseReplacement>) : CanvasOperation
         data object Undo : CanvasOperation
         data object Redo : CanvasOperation
     }
@@ -304,6 +366,7 @@ class CanvasViewModel(
     private sealed interface CanvasCommand {
         data class AddStroke(val stroke: Stroke) : CanvasCommand
         data class DeleteStrokes(val strokes: List<Stroke>) : CanvasCommand
+        data class ReplaceStrokes(val before: List<Stroke>, val after: List<Stroke>) : CanvasCommand
     }
 
     private data class HistoryState(val canUndo: Boolean = false, val canRedo: Boolean = false)

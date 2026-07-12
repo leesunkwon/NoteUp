@@ -138,6 +138,23 @@
                     app:strokeColor="@color/noteup_on_surface" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/stroke_eraser_mode_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:text="@string/stroke_eraser_mode"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/area_eraser_mode_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/area_eraser_mode"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/thin_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"

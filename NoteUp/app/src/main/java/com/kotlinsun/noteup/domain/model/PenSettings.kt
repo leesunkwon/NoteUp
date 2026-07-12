@@ -9,7 +9,10 @@ data class DrawingSettings(
     val tool: DrawingTool = DrawingTool.PEN,
     val pen: PenSettings = PenSettings(),
     val highlighter: HighlighterSettings = HighlighterSettings(),
+    val eraserMode: EraserMode = EraserMode.STROKE,
 )
+
+enum class EraserMode { STROKE, AREA }
 
 data class HighlighterSettings(
     val color: HighlighterColor = HighlighterColor.YELLOW,

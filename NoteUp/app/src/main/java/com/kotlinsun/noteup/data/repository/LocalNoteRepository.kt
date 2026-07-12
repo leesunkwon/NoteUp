@@ -169,6 +169,37 @@ class LocalNoteRepository(
         }
     }
 
+    override suspend fun replaceStrokes(
+        noteId: Long,
+        removed: List<Stroke>,
+        replacements: List<StrokeDraft>,
+    ): List<Stroke> {
+        if (removed.isEmpty()) return emptyList()
+        return database.withTransaction {
+            val pageId = removed.first().pageId
+            require(removed.all { it.pageId == pageId })
+            strokeDao.deleteByIds(removed.map(Stroke::id).distinct())
+            var nextIndex = strokeDao.nextStrokeIndex(pageId)
+            val now = System.currentTimeMillis()
+            val inserted = replacements.map { draft ->
+                require(draft.points.size >= 2)
+                val entity = StrokeEntity(
+                    pageId = pageId,
+                    strokeIndex = nextIndex++,
+                    toolType = draft.tool.name,
+                    colorArgb = draft.colorArgb,
+                    strokeWidth = draft.width,
+                    points = StrokePointCodec.encode(draft.points),
+                    createdAt = now,
+                )
+                entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
+                    ?: error("Replacement stroke could not be decoded")
+            }
+            noteDao.touch(noteId, now)
+            inserted
+        }
+    }
+
     override suspend fun clearStrokes(noteId: Long, pageId: Long) {
         database.withTransaction {
             strokeDao.deleteByPage(pageId)

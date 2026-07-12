@@ -30,5 +30,10 @@ interface NoteRepository {
     suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Stroke
     suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>)
     suspend fun restoreStrokes(noteId: Long, strokes: List<Stroke>)
+    suspend fun replaceStrokes(
+        noteId: Long,
+        removed: List<Stroke>,
+        replacements: List<StrokeDraft>,
+    ): List<Stroke>
     suspend fun clearStrokes(noteId: Long, pageId: Long)
 }

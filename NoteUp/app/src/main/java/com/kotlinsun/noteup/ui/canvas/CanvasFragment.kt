@@ -19,6 +19,7 @@ import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
+import com.kotlinsun.noteup.domain.model.EraserMode
 import com.kotlinsun.noteup.domain.model.HighlighterColor
 import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.PenColor
@@ -55,6 +56,7 @@ class CanvasFragment : Fragment() {
         binding.backButton.setOnClickListener { findNavController().popBackStack() }
         binding.drawingCanvas.onStrokeCompleted = viewModel::addStroke
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
+        binding.drawingCanvas.onAreaErased = viewModel::eraseArea
         setupToolbar()
         observeState()
     }
@@ -63,10 +65,13 @@ class CanvasFragment : Fragment() {
         listOf(
             penToolButton, highlighterToolButton, eraserToolButton,
             thinButton, mediumButton, thickButton,
+            strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
         penToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.PEN) }
         highlighterToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.ERASER) }
+        strokeEraserModeButton.setOnClickListener { viewModel.selectEraserMode(EraserMode.STROKE) }
+        areaEraserModeButton.setOnClickListener { viewModel.selectEraserMode(EraserMode.AREA) }
         blackColorButton.setOnClickListener { selectColorSlot(0) }
         blueColorButton.setOnClickListener { selectColorSlot(1) }
         redColorButton.setOnClickListener { selectColorSlot(2) }
@@ -128,6 +133,12 @@ class CanvasFragment : Fragment() {
         val showSettings = settings.tool != DrawingTool.ERASER
         colorButtons().forEach { it.isVisible = showSettings }
         thicknessButtons().forEach { it.isVisible = showSettings }
+        strokeEraserModeButton.isVisible = !showSettings
+        areaEraserModeButton.isVisible = !showSettings
+        strokeEraserModeButton.isChecked = settings.eraserMode == EraserMode.STROKE
+        areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
+        strokeEraserModeButton.alpha = selectionAlpha(strokeEraserModeButton.isChecked)
+        areaEraserModeButton.alpha = selectionAlpha(areaEraserModeButton.isChecked)
         if (showSettings) renderColorAndThickness(settings)
         updateInputEnabled()
     }
@@ -219,6 +230,7 @@ class CanvasFragment : Fragment() {
     override fun onDestroyView() {
         binding.drawingCanvas.onStrokeCompleted = null
         binding.drawingCanvas.onStrokesErased = null
+        binding.drawingCanvas.onAreaErased = null
         renderedStrokes = emptyList()
         _binding = null
         super.onDestroyView()

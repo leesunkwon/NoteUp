@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
+import com.kotlinsun.noteup.domain.model.EraserMode
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.StrokePoint
@@ -28,6 +29,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     var isInputEnabled: Boolean = false
     var onStrokeCompleted: ((PendingCanvasStroke) -> Unit)? = null
     var onStrokesErased: ((List<ErasableStroke>) -> Unit)? = null
+    var onAreaErased: ((List<AreaEraseReplacement>) -> Unit)? = null
     var drawingSettings: DrawingSettings = DrawingSettings()
 
     private val renderer = StrokeRenderer()
@@ -39,6 +41,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private val storedStrokes = mutableListOf<Stroke>()
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
     private val erasedInGesture = linkedMapOf<String, ErasableStroke>()
+    private val eraserPath = mutableListOf<Pair<Float, Float>>()
     private var strokeBitmap: Bitmap? = null
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private val activePoints = mutableListOf<StrokePoint>()
@@ -52,6 +55,15 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var nextToken = System.nanoTime()
 
     fun setStrokes(strokes: List<Stroke>) {
+        val previousIds = storedStrokes.mapTo(hashSetOf(), Stroke::id)
+        strokes.filterNot { it.id in previousIds }.forEach { saved ->
+            val pendingIndex = pendingStrokes.indexOfFirst { pending ->
+                pending.draft.tool == saved.tool &&
+                    pending.draft.colorArgb == saved.colorArgb &&
+                    pending.draft.width == saved.width && pending.draft.points == saved.points
+            }
+            if (pendingIndex >= 0) pendingStrokes.removeAt(pendingIndex)
+        }
         storedStrokes.clear()
         storedStrokes.addAll(strokes)
         rebuildStrokeBitmap()
@@ -137,6 +149,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         strokeStartedAt = event.eventTime
         activePoints.clear()
         erasedInGesture.clear()
+        eraserPath.clear()
         lastX = event.x
         lastY = event.y
         activeBounds.set(event.x, event.y, event.x, event.y)
@@ -183,7 +196,12 @@ class DrawingCanvasView @JvmOverloads constructor(
         }
         val completedBounds = RectF(activeBounds)
         if (activeSettings.tool == DrawingTool.ERASER) {
-            if (erasedInGesture.isNotEmpty()) onStrokesErased?.invoke(erasedInGesture.values.toList())
+            if (activeSettings.eraserMode == EraserMode.AREA) {
+                val replacements = createAreaReplacements()
+                if (replacements.isNotEmpty()) onAreaErased?.invoke(replacements)
+            } else if (erasedInGesture.isNotEmpty()) {
+                onStrokesErased?.invoke(erasedInGesture.values.toList())
+            }
         } else if (activePoints.size >= MINIMUM_POINT_COUNT) {
             val pending = PendingCanvasStroke(nextToken++, activeDraft(activePoints.toList()))
             pendingStrokes += pending
@@ -207,6 +225,10 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun eraseAt(x: Float, y: Float) {
         eraserX = x
         eraserY = y
+        if (activeSettings.eraserMode == EraserMode.AREA) {
+            eraserPath += x to y
+            return
+        }
         val radius = eraserRadiusPx()
         val hitStored = storedStrokes.filter { stroke ->
             "stored:${stroke.id}" !in erasedInGesture && StrokeHitTester.hits(
@@ -230,6 +252,47 @@ class DrawingCanvasView @JvmOverloads constructor(
             pendingStrokes.removeAll { pending -> hitPending.any { it.token == pending.token } }
         }
     }
+
+    private fun createAreaReplacements(): List<AreaEraseReplacement> {
+        if (eraserPath.isEmpty()) return emptyList()
+        val density = resources.displayMetrics.density
+        val persisted = storedStrokes.map { ErasableStroke.Persisted(it) to it.toDraft() }
+        val pending = pendingStrokes.map { ErasableStroke.Pending(it) to it.draft }
+        return (persisted + pending).mapNotNull { (target, draft) ->
+            val keptGroups = mutableListOf<MutableList<StrokePoint>>()
+            draft.points.forEach { point ->
+                val px = point.x * width
+                val py = point.y * height
+                val erased = eraserPath.any { (ex, ey) ->
+                    val dx = px - ex
+                    val dy = py - ey
+                    dx * dx + dy * dy <= areaCollisionRadius(draft, density).let { it * it }
+                }
+                if (erased) {
+                    if (keptGroups.lastOrNull()?.isEmpty() == false) keptGroups += mutableListOf()
+                } else {
+                    if (keptGroups.isEmpty()) keptGroups += mutableListOf()
+                    keptGroups.last() += point
+                }
+            }
+            val fragments = keptGroups.filter { it.isNotEmpty() }.map { points ->
+                val usablePoints = if (points.size == 1) listOf(points[0], points[0]) else points
+                draft.copy(points = usablePoints)
+            }
+            if (fragments.size == 1 && fragments.single().points == draft.points) null
+            else AreaEraseReplacement(target, fragments)
+        }
+    }
+
+    private fun areaCollisionRadius(draft: StrokeDraft, density: Float): Float {
+        val strokeRadius = when (draft.tool) {
+            StrokeTool.HIGHLIGHTER -> draft.width * density / 2f
+            StrokeTool.PEN -> draft.width * 1.55f * density / 2f
+        }
+        return eraserRadiusPx() + strokeRadius
+    }
+
+    private fun Stroke.toDraft() = StrokeDraft(tool, colorArgb, width, points)
 
     private fun activeDraft(points: List<StrokePoint>): StrokeDraft = when (activeSettings.tool) {
         DrawingTool.HIGHLIGHTER -> StrokeDraft(
@@ -303,6 +366,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         activePointerId = MotionEvent.INVALID_POINTER_ID
         activePoints.clear()
         erasedInGesture.clear()
+        eraserPath.clear()
         eraserX = null
         eraserY = null
         activeBounds.setEmpty()

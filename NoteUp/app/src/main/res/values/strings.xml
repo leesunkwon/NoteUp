@@ -52,6 +52,8 @@
     <string name="pen_thick">굵게</string>
     <string name="highlighter_tool">형광펜</string>
     <string name="eraser_tool">지우개</string>
+    <string name="stroke_eraser_mode">획 단위</string>
+    <string name="area_eraser_mode">영역</string>
     <string name="undo">실행 취소</string>
     <string name="redo">다시 실행</string>
     <string name="highlighter_color_yellow">노란색 형광펜</string>
