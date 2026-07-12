@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="TextAppearance.NoteUp.Title" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="android:textColor">@color/noteup_on_surface</item>
+        <item name="android:textSize">@dimen/text_size_title</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.NoteUp.Body" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textColor">@color/noteup_on_surface</item>
+        <item name="android:textSize">@dimen/text_size_body</item>
+    </style>
+</resources>
