@@ -2,13 +2,18 @@ package com.kotlinsun.noteup.data.repository
 
 import androidx.room.withTransaction
 import com.kotlinsun.noteup.data.local.NoteUpDatabase
+import com.kotlinsun.noteup.data.local.codec.StrokePointCodec
 import com.kotlinsun.noteup.data.local.entity.NoteEntity
 import com.kotlinsun.noteup.data.local.entity.NotebookEntity
 import com.kotlinsun.noteup.data.local.entity.PageEntity
+import com.kotlinsun.noteup.data.local.entity.StrokeEntity
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.Stroke
+import com.kotlinsun.noteup.domain.model.StrokeDraft
+import com.kotlinsun.noteup.domain.model.StrokeTool
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -20,9 +25,13 @@ class LocalNoteRepository(
     private val notebookDao = database.notebookDao()
     private val noteDao = database.noteDao()
     private val pageDao = database.pageDao()
+    private val strokeDao = database.strokeDao()
 
     override fun observeNotebooks(): Flow<List<Notebook>> =
         notebookDao.observeAll().map { notebooks -> notebooks.map { it.toDomain() } }
+
+    override fun observeNote(noteId: Long): Flow<Note?> =
+        noteDao.observeById(noteId).map { it?.toDomain() }
 
     override fun observeAllNotes(): Flow<List<Note>> =
         noteDao.observeAll().map { notes -> notes.map { it.toDomain() } }
@@ -35,6 +44,14 @@ class LocalNoteRepository(
 
     override fun observePages(noteId: Long): Flow<List<Page>> =
         pageDao.observeByNote(noteId).map { pages -> pages.map { it.toDomain() } }
+
+    override fun observeFirstPage(noteId: Long): Flow<Page?> =
+        pageDao.observeFirstByNote(noteId).map { it?.toDomain() }
+
+    override fun observeStrokes(pageId: Long): Flow<List<Stroke>> =
+        strokeDao.observeByPage(pageId).map { strokes ->
+            strokes.mapNotNull { it.toDomainOrNull() }
+        }
 
     override suspend fun createNotebook(name: String): Long {
         val now = System.currentTimeMillis()
@@ -110,6 +127,35 @@ class LocalNoteRepository(
         pageDao.delete(pageId)
     }
 
+    override suspend fun saveStroke(
+        noteId: Long,
+        pageId: Long,
+        stroke: StrokeDraft,
+    ): Long = database.withTransaction {
+        require(stroke.points.size >= 2) { "A stroke requires at least two points" }
+        val now = System.currentTimeMillis()
+        val strokeId = strokeDao.insert(
+            StrokeEntity(
+                pageId = pageId,
+                strokeIndex = strokeDao.nextStrokeIndex(pageId),
+                toolType = stroke.tool.name,
+                colorArgb = stroke.colorArgb,
+                strokeWidth = stroke.width,
+                points = StrokePointCodec.encode(stroke.points),
+                createdAt = now,
+            ),
+        )
+        noteDao.touch(noteId, now)
+        strokeId
+    }
+
+    override suspend fun clearStrokes(noteId: Long, pageId: Long) {
+        database.withTransaction {
+            strokeDao.deleteByPage(pageId)
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
     private fun NotebookEntity.toDomain() = Notebook(
         id = id,
         name = name,
@@ -133,4 +179,17 @@ class LocalNoteRepository(
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
+
+    private fun StrokeEntity.toDomainOrNull(): Stroke? = runCatching {
+        Stroke(
+            id = id,
+            pageId = pageId,
+            strokeIndex = strokeIndex,
+            tool = StrokeTool.valueOf(toolType),
+            colorArgb = colorArgb,
+            width = strokeWidth,
+            points = StrokePointCodec.decode(points),
+            createdAt = createdAt,
+        )
+    }.getOrNull()
 }

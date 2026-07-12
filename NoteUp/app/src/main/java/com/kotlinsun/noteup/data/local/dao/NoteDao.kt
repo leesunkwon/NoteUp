@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface NoteDao {
+    @Query("SELECT * FROM notes WHERE id = :noteId LIMIT 1")
+    fun observeById(noteId: Long): Flow<NoteEntity?>
+
     @Query("SELECT * FROM notes ORDER BY updatedAt DESC, id DESC")
     fun observeAll(): Flow<List<NoteEntity>>
 

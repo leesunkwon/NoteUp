@@ -4,14 +4,19 @@ import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.Stroke
+import com.kotlinsun.noteup.domain.model.StrokeDraft
 import kotlinx.coroutines.flow.Flow
 
 interface NoteRepository {
     fun observeNotebooks(): Flow<List<Notebook>>
+    fun observeNote(noteId: Long): Flow<Note?>
     fun observeAllNotes(): Flow<List<Note>>
     fun observeUnfiledNotes(): Flow<List<Note>>
     fun observeNotes(notebookId: Long): Flow<List<Note>>
     fun observePages(noteId: Long): Flow<List<Page>>
+    fun observeFirstPage(noteId: Long): Flow<Page?>
+    fun observeStrokes(pageId: Long): Flow<List<Stroke>>
     suspend fun createNotebook(name: String): Long
     suspend fun renameNotebook(notebookId: Long, name: String)
     suspend fun deleteNotebook(notebookId: Long)
@@ -22,4 +27,6 @@ interface NoteRepository {
     suspend fun createPage(noteId: Long, template: PageTemplate): Long
     suspend fun updatePageTemplate(pageId: Long, template: PageTemplate)
     suspend fun deletePage(pageId: Long)
+    suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Long
+    suspend fun clearStrokes(noteId: Long, pageId: Long)
 }

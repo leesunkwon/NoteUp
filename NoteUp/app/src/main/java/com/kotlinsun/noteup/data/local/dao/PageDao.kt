@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PageDao {
+    @Query("SELECT * FROM pages WHERE noteId = :noteId ORDER BY pageIndex ASC LIMIT 1")
+    fun observeFirstByNote(noteId: Long): Flow<PageEntity?>
+
     @Query("SELECT * FROM pages WHERE noteId = :noteId ORDER BY pageIndex ASC")
     fun observeByNote(noteId: Long): Flow<List<PageEntity>>
 

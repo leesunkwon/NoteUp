@@ -4,13 +4,33 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import com.google.android.material.snackbar.Snackbar
+import com.kotlinsun.noteup.NoteUpApplication
+import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
+import com.kotlinsun.noteup.domain.model.Stroke
+import kotlinx.coroutines.launch
 
 class CanvasFragment : Fragment() {
 
     private var _binding: FragmentCanvasBinding? = null
     private val binding get() = checkNotNull(_binding)
+    private var renderedStrokes: List<Stroke> = emptyList()
+
+    private val noteId: Long by lazy {
+        requireArguments().getLong(NOTE_ID_ARGUMENT, INVALID_NOTE_ID)
+    }
+    private val viewModel: CanvasViewModel by viewModels {
+        val application = requireActivity().application as NoteUpApplication
+        CanvasViewModel.Factory(noteId, application.container.noteRepository)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -21,8 +41,62 @@ class CanvasFragment : Fragment() {
         return binding.root
     }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        binding.backButton.setOnClickListener { findNavController().popBackStack() }
+        binding.drawingCanvas.onStrokeCompleted = viewModel::saveStroke
+        observeState()
+    }
+
+    private fun observeState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { viewModel.uiState.collect(::render) }
+                launch {
+                    viewModel.errors.collect {
+                        Snackbar.make(
+                            binding.root,
+                            R.string.stroke_save_error,
+                            Snackbar.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun render(state: CanvasUiState) = with(binding) {
+        loadingIndicator.isVisible = state == CanvasUiState.Loading
+        notFoundState.isVisible = state == CanvasUiState.NotFound
+        drawingCanvas.isInputEnabled = state is CanvasUiState.Ready
+
+        if (state is CanvasUiState.Ready) {
+            noteTitle.text = state.note.title
+            saveStatus.text = getString(if (state.isSaving) R.string.saving else R.string.saved)
+            if (renderedStrokes != state.strokes) {
+                renderedStrokes = state.strokes
+                drawingCanvas.setStrokes(state.strokes)
+            }
+        } else {
+            noteTitle.text = getString(R.string.canvas_title)
+            saveStatus.text = null
+        }
+    }
+
+    override fun onStop() {
+        binding.drawingCanvas.cancelActiveStroke()
+        super.onStop()
+    }
+
     override fun onDestroyView() {
+        binding.drawingCanvas.onStrokeCompleted = null
+        renderedStrokes = emptyList()
         _binding = null
         super.onDestroyView()
+    }
+
+    private companion object {
+        const val NOTE_ID_ARGUMENT = "noteId"
+        const val INVALID_NOTE_ID = -1L
     }
 }
