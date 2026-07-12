@@ -42,6 +42,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
     private val erasedInGesture = linkedMapOf<String, ErasableStroke>()
     private val eraserPath = mutableListOf<Pair<Float, Float>>()
+    private var areaPreview: List<AreaEraseReplacement> = emptyList()
     private var strokeBitmap: Bitmap? = null
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private val activePoints = mutableListOf<StrokePoint>()
@@ -56,13 +57,16 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     fun setStrokes(strokes: List<Stroke>) {
         val previousIds = storedStrokes.mapTo(hashSetOf(), Stroke::id)
-        strokes.filterNot { it.id in previousIds }.forEach { saved ->
+        val newlyStored = strokes.filterNot { it.id in previousIds }
+        newlyStored.forEach { saved ->
             val pendingIndex = pendingStrokes.indexOfFirst { pending ->
-                pending.draft.tool == saved.tool &&
-                    pending.draft.colorArgb == saved.colorArgb &&
-                    pending.draft.width == saved.width && pending.draft.points == saved.points
+                pending.draft.matches(saved)
             }
             if (pendingIndex >= 0) pendingStrokes.removeAt(pendingIndex)
+        }
+        val previewFragments = areaPreview.flatMap(AreaEraseReplacement::fragments)
+        if (previewFragments.isEmpty() || newlyStored.containsAllDrafts(previewFragments)) {
+            areaPreview = emptyList()
         }
         storedStrokes.clear()
         storedStrokes.addAll(strokes)
@@ -70,12 +74,13 @@ class DrawingCanvasView @JvmOverloads constructor(
         invalidate()
     }
 
-    fun markPendingPersisted(token: Long) {
+    fun discardPendingStroke(token: Long) {
         pendingStrokes.removeAll { it.token == token }
         invalidate()
     }
 
     fun refreshVisibleStrokes(strokes: List<Stroke>) {
+        areaPreview = emptyList()
         setStrokes(strokes)
     }
 
@@ -111,7 +116,13 @@ class DrawingCanvasView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         strokeBitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
-        pendingStrokes.forEach { drawStroke(canvas, it.draft) }
+        val hiddenPendingTokens = areaPreview.mapNotNullTo(hashSetOf()) { replacement ->
+            (replacement.target as? ErasableStroke.Pending)?.stroke?.token
+        }
+        pendingStrokes.filterNot { it.token in hiddenPendingTokens }.forEach {
+            drawStroke(canvas, it.draft)
+        }
+        areaPreview.flatMap(AreaEraseReplacement::fragments).forEach { drawStroke(canvas, it) }
         if (activePoints.isNotEmpty() && activeSettings.tool != DrawingTool.ERASER) {
             drawStroke(canvas, activeDraft(activePoints))
         }
@@ -150,11 +161,16 @@ class DrawingCanvasView @JvmOverloads constructor(
         activePoints.clear()
         erasedInGesture.clear()
         eraserPath.clear()
+        if (areaPreview.isNotEmpty()) {
+            areaPreview = emptyList()
+            rebuildStrokeBitmap()
+        }
         lastX = event.x
         lastY = event.y
         activeBounds.set(event.x, event.y, event.x, event.y)
         if (activeSettings.tool == DrawingTool.ERASER) {
             eraseAt(event.x, event.y)
+            updateAreaPreviewIfNeeded()
         } else {
             addPoint(event.x, event.y, event.pressure, event.eventTime)
         }
@@ -180,6 +196,7 @@ class DrawingCanvasView @JvmOverloads constructor(
             event.getPressure(pointerIndex),
             event.eventTime,
         )
+        updateAreaPreviewIfNeeded()
         return true
     }
 
@@ -193,12 +210,15 @@ class DrawingCanvasView @JvmOverloads constructor(
                 event.getPressure(pointerIndex),
                 event.eventTime,
             )
+            updateAreaPreviewIfNeeded()
         }
         val completedBounds = RectF(activeBounds)
+        var keepAreaPreview = false
         if (activeSettings.tool == DrawingTool.ERASER) {
             if (activeSettings.eraserMode == EraserMode.AREA) {
-                val replacements = createAreaReplacements()
+                val replacements = areaPreview
                 if (replacements.isNotEmpty()) onAreaErased?.invoke(replacements)
+                keepAreaPreview = replacements.isNotEmpty()
             } else if (erasedInGesture.isNotEmpty()) {
                 onStrokesErased?.invoke(erasedInGesture.values.toList())
             }
@@ -207,7 +227,7 @@ class DrawingCanvasView @JvmOverloads constructor(
             pendingStrokes += pending
             onStrokeCompleted?.invoke(pending)
         }
-        resetActiveInput()
+        resetActiveInput(clearAreaPreview = !keepAreaPreview)
         parent?.requestDisallowInterceptTouchEvent(false)
         invalidateDirtyBounds(completedBounds)
         return true
@@ -250,6 +270,29 @@ class DrawingCanvasView @JvmOverloads constructor(
         }
         if (hitPending.isNotEmpty()) {
             pendingStrokes.removeAll { pending -> hitPending.any { it.token == pending.token } }
+        }
+    }
+
+    private fun updateAreaPreviewIfNeeded() {
+        if (activeSettings.tool != DrawingTool.ERASER ||
+            activeSettings.eraserMode != EraserMode.AREA
+        ) return
+        areaPreview = createAreaReplacements()
+        rebuildStrokeBitmap()
+    }
+
+    private fun StrokeDraft.matches(stroke: Stroke): Boolean =
+        tool == stroke.tool && colorArgb == stroke.colorArgb &&
+            width == stroke.width && points == stroke.points
+
+    private fun List<Stroke>.containsAllDrafts(drafts: List<StrokeDraft>): Boolean {
+        val candidates = toMutableList()
+        return drafts.all { draft ->
+            val index = candidates.indexOfFirst(draft::matches)
+            if (index < 0) false else {
+                candidates.removeAt(index)
+                true
+            }
         }
     }
 
@@ -326,12 +369,17 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (width <= 0 || height <= 0) return
         strokeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
             val canvas = Canvas(bitmap)
-            storedStrokes.sortedBy(Stroke::strokeIndex).forEach { stroke ->
-                renderer.draw(
-                    canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
-                    resources.displayMetrics.density, stroke.tool,
-                )
+            val hiddenIds = areaPreview.mapNotNullTo(hashSetOf()) { replacement ->
+                (replacement.target as? ErasableStroke.Persisted)?.stroke?.id
             }
+            storedStrokes.filterNot { it.id in hiddenIds }
+                .sortedBy(Stroke::strokeIndex)
+                .forEach { stroke ->
+                    renderer.draw(
+                        canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
+                        resources.displayMetrics.density, stroke.tool,
+                    )
+                }
         }
     }
 
@@ -364,11 +412,15 @@ class DrawingCanvasView @JvmOverloads constructor(
         )
     }
 
-    private fun resetActiveInput() {
+    private fun resetActiveInput(clearAreaPreview: Boolean = true) {
         activePointerId = MotionEvent.INVALID_POINTER_ID
         activePoints.clear()
         erasedInGesture.clear()
         eraserPath.clear()
+        if (clearAreaPreview && areaPreview.isNotEmpty()) {
+            areaPreview = emptyList()
+            rebuildStrokeBitmap()
+        }
         eraserX = null
         eraserY = null
         activeBounds.setEmpty()

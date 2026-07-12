@@ -197,8 +197,8 @@ class CanvasFragment : Fragment() {
     }
 
     private fun handleEvent(event: CanvasEvent) = when (event) {
-        is CanvasEvent.PendingPersisted -> binding.drawingCanvas.markPendingPersisted(event.token)
-        is CanvasEvent.PendingDiscarded -> binding.drawingCanvas.markPendingPersisted(event.token)
+        is CanvasEvent.PendingPersisted -> Unit
+        is CanvasEvent.PendingDiscarded -> binding.drawingCanvas.discardPendingStroke(event.token)
         CanvasEvent.RefreshStrokes -> {
             val strokes = (currentState as? CanvasUiState.Ready)?.strokes.orEmpty()
             renderedStrokes = strokes
