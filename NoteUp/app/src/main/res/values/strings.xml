@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">NoteUp</string>
+    <string name="dashboard_title">NoteUp</string>
+    <string name="dashboard_description">빠르게 기록하고 깔끔하게 정리하세요.</string>
+    <string name="open_canvas">필기 시작</string>
+    <string name="open_settings">설정</string>
+    <string name="canvas_title">필기 캔버스</string>
+    <string name="canvas_placeholder">필기 도구는 다음 단계에서 추가됩니다.</string>
+    <string name="settings_title">설정</string>
+    <string name="settings_placeholder">설정 항목은 다음 단계에서 추가됩니다.</string>
 </resources>

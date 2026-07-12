@@ -2,4 +2,10 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="noteup_primary">#315C4C</color>
+    <color name="noteup_on_primary">#FFFFFFFF</color>
+    <color name="noteup_background">#FFFDF8</color>
+    <color name="noteup_surface">#FFFFFFFF</color>
+    <color name="noteup_on_surface">#202522</color>
+    <color name="noteup_outline">#D9DED9</color>
 </resources>

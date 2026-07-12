@@ -1,8 +1,15 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Base.Theme.NoteUp" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <item name="colorPrimary">@color/noteup_primary</item>
+        <item name="colorOnPrimary">@color/noteup_on_primary</item>
+        <item name="colorSurface">@color/noteup_surface</item>
+        <item name="colorOnSurface">@color/noteup_on_surface</item>
+        <item name="android:colorBackground">@color/noteup_background</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <style name="Theme.NoteUp" parent="Base.Theme.NoteUp" />
