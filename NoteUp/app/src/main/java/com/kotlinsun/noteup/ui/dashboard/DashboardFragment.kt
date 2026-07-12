@@ -66,13 +66,14 @@ class DashboardFragment : Fragment() {
         notebookList.layoutManager = LinearLayoutManager(requireContext())
         notebookList.adapter = notebookAdapter
 
-        noteGrid.layoutManager = GridLayoutManager(requireContext(), DEFAULT_GRID_SPAN_COUNT)
+        val gridLayoutManager = GridLayoutManager(requireContext(), DEFAULT_GRID_SPAN_COUNT)
+        noteGrid.layoutManager = gridLayoutManager
         noteGrid.adapter = noteAdapter
-        noteGrid.doOnLayout { grid ->
+        noteGrid.doOnLayout {
             val minimumCardWidth = resources.getDimensionPixelSize(R.dimen.note_card_width)
             val spacing = resources.getDimensionPixelSize(R.dimen.spacing_medium)
-            val spanCount = (grid.width / (minimumCardWidth + spacing)).coerceAtLeast(2)
-            (grid.layoutManager as GridLayoutManager).spanCount = spanCount
+            val spanCount = (noteGrid.width / (minimumCardWidth + spacing)).coerceAtLeast(2)
+            gridLayoutManager.spanCount = spanCount
         }
     }
 

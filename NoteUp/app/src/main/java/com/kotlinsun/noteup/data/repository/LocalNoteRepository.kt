@@ -22,19 +22,19 @@ class LocalNoteRepository(
     private val pageDao = database.pageDao()
 
     override fun observeNotebooks(): Flow<List<Notebook>> =
-        notebookDao.observeAll().map { notebooks -> notebooks.map(NotebookEntity::toDomain) }
+        notebookDao.observeAll().map { notebooks -> notebooks.map { it.toDomain() } }
 
     override fun observeAllNotes(): Flow<List<Note>> =
-        noteDao.observeAll().map { notes -> notes.map(NoteEntity::toDomain) }
+        noteDao.observeAll().map { notes -> notes.map { it.toDomain() } }
 
     override fun observeUnfiledNotes(): Flow<List<Note>> =
-        noteDao.observeUnfiled().map { notes -> notes.map(NoteEntity::toDomain) }
+        noteDao.observeUnfiled().map { notes -> notes.map { it.toDomain() } }
 
     override fun observeNotes(notebookId: Long): Flow<List<Note>> =
-        noteDao.observeByNotebook(notebookId).map { notes -> notes.map(NoteEntity::toDomain) }
+        noteDao.observeByNotebook(notebookId).map { notes -> notes.map { it.toDomain() } }
 
     override fun observePages(noteId: Long): Flow<List<Page>> =
-        pageDao.observeByNote(noteId).map { pages -> pages.map(PageEntity::toDomain) }
+        pageDao.observeByNote(noteId).map { pages -> pages.map { it.toDomain() } }
 
     override suspend fun createNotebook(name: String): Long {
         val now = System.currentTimeMillis()
