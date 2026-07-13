@@ -705,7 +705,8 @@ class CanvasFragment : Fragment() {
             return
         }
         val baseEdge = maxOf(binding.drawingCanvas.width, binding.drawingCanvas.height, 512)
-        val requestedEdge = ceil(baseEdge * scale / PDF_RENDER_BUCKET).toInt() * PDF_RENDER_BUCKET
+        val requestedEdge = ceil(baseEdge * scale / PDF_RENDER_BUCKET.toFloat()).toInt() *
+            PDF_RENDER_BUCKET
         val key = "${background.storageName}:${background.sourcePageIndex}:$requestedEdge"
         if (!force && key == pdfRenderKey) return
         pdfRenderKey = key
@@ -778,7 +779,7 @@ class CanvasFragment : Fragment() {
     }
 
     private companion object {
-        const val PDF_RENDER_BUCKET = 512f
+        const val PDF_RENDER_BUCKET = 512
         const val NOTE_ID_ARGUMENT = "noteId"
         const val INVALID_NOTE_ID = -1L
         const val DEFAULT_TEXT_WIDTH = 0.35f
