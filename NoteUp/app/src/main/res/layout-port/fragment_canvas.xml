@@ -26,10 +26,10 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/back_button"
-                style="@style/Widget.NoteUp.Button.Utility"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/back" />
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
+                app:icon="@drawable/ic_arrow_back" />
 
             <TextView
                 android:id="@+id/note_title"
@@ -53,10 +53,10 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/more_button"
-                style="@style/Widget.NoteUp.Button.Utility"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/more" />
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
+                app:icon="@drawable/ic_more_vert" />
         </LinearLayout>
 
         <LinearLayout
@@ -82,63 +82,63 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/pen_tool_button"
-                        style="@style/Widget.NoteUp.Button.Tool"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/pen_tool" />
+                        style="@style/Widget.NoteUp.Button.IconTool"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        app:icon="@drawable/ic_tool_pen" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/highlighter_tool_button"
-                        style="@style/Widget.NoteUp.Button.Tool"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/highlighter_tool" />
+                        style="@style/Widget.NoteUp.Button.IconTool"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        app:icon="@drawable/ic_tool_highlighter" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/eraser_tool_button"
-                        style="@style/Widget.NoteUp.Button.Tool"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/eraser_tool" />
+                        style="@style/Widget.NoteUp.Button.IconTool"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        app:icon="@drawable/ic_tool_eraser" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/lasso_tool_button"
-                        style="@style/Widget.NoteUp.Button.Tool"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/lasso_tool" />
+                        style="@style/Widget.NoteUp.Button.IconTool"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        app:icon="@drawable/ic_tool_lasso" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/shape_tool_button"
-                        style="@style/Widget.NoteUp.Button.Tool"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/shape_tool" />
+                        style="@style/Widget.NoteUp.Button.IconTool"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        app:icon="@drawable/ic_tool_shape" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/text_tool_button"
-                        style="@style/Widget.NoteUp.Button.Tool"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/text_tool" />
+                        style="@style/Widget.NoteUp.Button.IconTool"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        app:icon="@drawable/ic_tool_text" />
                 </LinearLayout>
             </HorizontalScrollView>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/undo_button"
-                style="@style/Widget.NoteUp.Button.Utility"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
                 android:enabled="false"
-                android:text="@string/undo" />
+                app:icon="@drawable/ic_undo" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/redo_button"
-                style="@style/Widget.NoteUp.Button.Utility"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
                 android:enabled="false"
-                android:text="@string/redo" />
+                app:icon="@drawable/ic_redo" />
         </LinearLayout>
     </LinearLayout>
 

@@ -21,6 +21,8 @@
     <dimen name="note_preview_height">150dp</dimen>
     <dimen name="card_corner_radius">0dp</dimen>
     <dimen name="canvas_toolbar_height">64dp</dimen>
+    <dimen name="toolbar_icon_size">24dp</dimen>
+    <dimen name="toolbar_icon_padding">12dp</dimen>
     <dimen name="canvas_context_toolbar_height">56dp</dimen>
     <dimen name="canvas_title_width">144dp</dimen>
     <dimen name="page_navigation_height">64dp</dimen>
