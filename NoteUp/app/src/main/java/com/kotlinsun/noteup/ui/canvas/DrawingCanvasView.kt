@@ -168,6 +168,30 @@ class DrawingCanvasView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun adjustZoom(delta: Float) {
+        if (width <= 0 || height <= 0) return
+        val oldScale = viewport.scale
+        val newScale = (oldScale + delta).coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
+        if (newScale == oldScale) return
+        val ratio = newScale / oldScale
+        val focusX = width / 2f
+        val focusY = height / 2f
+        updateViewport(
+            CanvasViewport(
+                scale = newScale,
+                offsetX = focusX - (focusX - viewport.offsetX) * ratio,
+                offsetY = focusY - (focusY - viewport.offsetY) * ratio,
+                referenceWidth = width,
+                referenceHeight = height,
+            ),
+        )
+    }
+
+    fun resetZoom() {
+        if (viewport == CanvasViewport()) return
+        updateViewport(CanvasViewport())
+    }
+
     fun setStrokes(strokes: List<Stroke>) {
         val previousStrokes = storedStrokes.toList()
         val previousIds = storedStrokes.mapTo(hashSetOf(), Stroke::id)

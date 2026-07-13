@@ -348,6 +348,46 @@
             android:layout_height="wrap_content"
             android:text="@string/next_page" />
 
+        <LinearLayout
+            android:id="@+id/zoom_controls"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/zoom_out_button"
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
+                android:contentDescription="@string/zoom_out"
+                android:text="@string/zoom_out_symbol" />
+
+            <TextView
+                android:id="@+id/zoom_percentage"
+                android:layout_width="@dimen/zoom_percentage_width"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/zoom_percentage_default"
+                android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+                tools:text="100%" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/zoom_reset_button"
+                style="@style/Widget.NoteUp.Button.Utility"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/zoom_reset" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/zoom_in_button"
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
+                android:contentDescription="@string/zoom_in"
+                android:text="@string/zoom_in_symbol" />
+        </LinearLayout>
+
         <Space
             android:layout_width="0dp"
             android:layout_height="1dp"
