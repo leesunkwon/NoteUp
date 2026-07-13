@@ -18,6 +18,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
@@ -31,12 +33,16 @@ import com.kotlinsun.noteup.domain.model.PenThickness
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.Stroke
+import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasTextDraft
+import com.kotlinsun.noteup.domain.model.TextSize
 import kotlinx.coroutines.launch
 
 class CanvasFragment : Fragment() {
     private var _binding: FragmentCanvasBinding? = null
     private val binding get() = checkNotNull(_binding)
     private var renderedStrokes: List<Stroke> = emptyList()
+    private var renderedTexts: List<CanvasText> = emptyList()
     private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
@@ -75,6 +81,9 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
         binding.drawingCanvas.onAreaErased = viewModel::eraseArea
         binding.drawingCanvas.onViewportChanged = viewModel::updateViewport
+        binding.drawingCanvas.onTextRequested = ::showNewTextDialog
+        binding.drawingCanvas.onSelectionChanged = viewModel::updateSelection
+        binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
         setupToolbar()
         setupPagePanel()
         observeState()
@@ -82,13 +91,34 @@ class CanvasFragment : Fragment() {
 
     private fun setupToolbar() = with(binding) {
         listOf(
-            penToolButton, highlighterToolButton, eraserToolButton,
+            penToolButton, highlighterToolButton, eraserToolButton, lassoToolButton,
+            lineToolButton, rectangleToolButton, circleToolButton, textToolButton,
             thinButton, mediumButton, thickButton,
             strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
-        penToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.PEN) }
-        highlighterToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.HIGHLIGHTER) }
-        eraserToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.ERASER) }
+        penToolButton.setOnClickListener { selectDrawingTool(DrawingTool.PEN) }
+        highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
+        eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
+        lassoToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.LASSO) }
+        lineToolButton.setOnClickListener { selectDrawingTool(DrawingTool.LINE) }
+        rectangleToolButton.setOnClickListener { selectDrawingTool(DrawingTool.RECTANGLE) }
+        circleToolButton.setOnClickListener { selectDrawingTool(DrawingTool.CIRCLE) }
+        textToolButton.setOnClickListener { selectDrawingTool(DrawingTool.TEXT) }
+        copySelectionButton.setOnClickListener { viewModel.copySelection() }
+        pasteSelectionButton.setOnClickListener {
+            val offset = PASTE_OFFSET_DP * resources.displayMetrics.density
+            viewModel.pasteSelection(
+                offset / drawingCanvas.width.coerceAtLeast(1),
+                offset / drawingCanvas.height.coerceAtLeast(1),
+            )
+        }
+        deleteSelectionButton.setOnClickListener {
+            viewModel.deleteSelection()
+            drawingCanvas.clearSelection()
+        }
+        editTextButton.setOnClickListener {
+            drawingCanvas.currentSelection().texts.singleOrNull()?.let(::showEditTextDialog)
+        }
         strokeEraserModeButton.setOnClickListener { viewModel.selectEraserMode(EraserMode.STROKE) }
         areaEraserModeButton.setOnClickListener { viewModel.selectEraserMode(EraserMode.AREA) }
         blackColorButton.setOnClickListener { selectColorSlot(0) }
@@ -165,19 +195,37 @@ class CanvasFragment : Fragment() {
             if (renderedPageId != state.page.id) {
                 renderedPageId = state.page.id
                 renderedStrokes = state.strokes
+                renderedTexts = state.texts
                 drawingCanvas.showPage(
                     state.page.id,
                     state.page.templateType,
                     state.strokes,
                     state.viewport,
                 )
+                drawingCanvas.setTexts(state.texts)
             } else {
                 if (renderedStrokes != state.strokes) {
                     renderedStrokes = state.strokes
                     drawingCanvas.setStrokes(state.strokes)
                 }
+                if (renderedTexts != state.texts) {
+                    renderedTexts = state.texts
+                    drawingCanvas.setTexts(state.texts)
+                }
                 drawingCanvas.setViewport(state.viewport)
             }
+            copySelectionButton.isVisible = state.hasSelection
+            deleteSelectionButton.isVisible = state.hasSelection
+            pasteSelectionButton.isVisible = state.canPaste
+            copySelectionButton.isEnabled = !state.isBusy
+            pasteSelectionButton.isEnabled = !state.isBusy
+            deleteSelectionButton.isEnabled = !state.isBusy
+            editTextButton.isEnabled = !state.isBusy
+            if (drawingCanvas.currentSelection() != state.selection) {
+                drawingCanvas.syncSelection(state.selection)
+            }
+            editTextButton.isVisible = drawingCanvas.currentSelection().texts.size == 1 &&
+                drawingCanvas.currentSelection().strokes.isEmpty()
         } else {
             noteTitle.text = getString(R.string.canvas_title)
             saveStatus.text = null
@@ -197,15 +245,22 @@ class CanvasFragment : Fragment() {
         penToolButton.isChecked = settings.tool == DrawingTool.PEN
         highlighterToolButton.isChecked = settings.tool == DrawingTool.HIGHLIGHTER
         eraserToolButton.isChecked = settings.tool == DrawingTool.ERASER
+        lassoToolButton.isChecked = settings.tool == DrawingTool.LASSO
+        lineToolButton.isChecked = settings.tool == DrawingTool.LINE
+        rectangleToolButton.isChecked = settings.tool == DrawingTool.RECTANGLE
+        circleToolButton.isChecked = settings.tool == DrawingTool.CIRCLE
+        textToolButton.isChecked = settings.tool == DrawingTool.TEXT
         penToolButton.alpha = selectionAlpha(penToolButton.isChecked)
         highlighterToolButton.alpha = selectionAlpha(highlighterToolButton.isChecked)
         eraserToolButton.alpha = selectionAlpha(eraserToolButton.isChecked)
+        listOf(lassoToolButton, lineToolButton, rectangleToolButton, circleToolButton, textToolButton)
+            .forEach { it.alpha = selectionAlpha(it.isChecked) }
 
-        val showSettings = settings.tool != DrawingTool.ERASER
+        val showSettings = settings.tool !in setOf(DrawingTool.ERASER, DrawingTool.LASSO)
         colorButtons().forEach { it.isVisible = showSettings }
         thicknessButtons().forEach { it.isVisible = showSettings }
-        strokeEraserModeButton.isVisible = !showSettings
-        areaEraserModeButton.isVisible = !showSettings
+        strokeEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
+        areaEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
         strokeEraserModeButton.isChecked = settings.eraserMode == EraserMode.STROKE
         areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
         strokeEraserModeButton.alpha = selectionAlpha(strokeEraserModeButton.isChecked)
@@ -244,7 +299,18 @@ class CanvasFragment : Fragment() {
 
         val selectedThickness = if (settings.tool == DrawingTool.HIGHLIGHTER) {
             settings.highlighter.thickness.ordinal
+        } else if (settings.tool == DrawingTool.TEXT) {
+            settings.textSize.ordinal
         } else settings.pen.thickness.ordinal
+        if (settings.tool == DrawingTool.TEXT) {
+            binding.thinButton.setText(R.string.text_small)
+            binding.mediumButton.setText(R.string.text_medium)
+            binding.thickButton.setText(R.string.text_large)
+        } else {
+            binding.thinButton.setText(R.string.pen_thin)
+            binding.mediumButton.setText(R.string.pen_medium)
+            binding.thickButton.setText(R.string.pen_thick)
+        }
         thicknessButtons().forEachIndexed { index, button ->
             button.isChecked = index == selectedThickness
             button.alpha = selectionAlpha(button.isChecked)
@@ -262,9 +328,77 @@ class CanvasFragment : Fragment() {
     private fun selectThicknessSlot(index: Int) {
         if (currentSettings.tool == DrawingTool.HIGHLIGHTER) {
             viewModel.selectHighlighterThickness(HighlighterThickness.entries[index])
+        } else if (currentSettings.tool == DrawingTool.TEXT) {
+            viewModel.selectTextSize(TextSize.entries[index])
         } else {
             viewModel.selectPenThickness(PenThickness.entries[index])
         }
+    }
+
+    private fun selectDrawingTool(tool: DrawingTool) {
+        binding.drawingCanvas.clearSelection()
+        viewModel.selectTool(tool)
+    }
+
+    private fun showNewTextDialog(x: Float, y: Float) {
+        showTextDialog(null) { content ->
+            viewModel.addText(
+                CanvasTextDraft(
+                    x = x.coerceAtMost(1f - DEFAULT_TEXT_WIDTH),
+                    y = y,
+                    boxWidth = DEFAULT_TEXT_WIDTH,
+                    content = content,
+                    colorArgb = currentSettings.pen.color.argb,
+                    textSizeSp = currentSettings.textSize.sizeSp,
+                ),
+            )
+        }
+    }
+
+    private fun showEditTextDialog(text: CanvasText) {
+        showTextDialog(text.content) { content ->
+            if (content.isBlank()) {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.delete_text_title)
+                    .setMessage(R.string.delete_text_message)
+                    .setNegativeButton(R.string.cancel, null)
+                    .setPositiveButton(R.string.delete) { _, _ -> viewModel.editText(text, content) }
+                    .show()
+            } else viewModel.editText(text, content)
+        }
+    }
+
+    private fun showTextDialog(initialValue: String?, onConfirm: (String) -> Unit) {
+        val input = TextInputEditText(requireContext()).apply {
+            minLines = 3
+            maxLines = 8
+            setText(initialValue.orEmpty())
+            setSelection(text?.length ?: 0)
+        }
+        val inputLayout = TextInputLayout(requireContext()).apply {
+            hint = getString(R.string.text_hint)
+            addView(input)
+            val padding = resources.getDimensionPixelSize(R.dimen.spacing_large)
+            setPadding(padding, 0, padding, 0)
+        }
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(if (initialValue == null) R.string.enter_text else R.string.edit_text)
+            .setView(inputLayout)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val value = input.text?.toString().orEmpty()
+                if (value.isBlank() && initialValue == null) {
+                    inputLayout.error = getString(R.string.required_name_error)
+                } else {
+                    onConfirm(value)
+                    dialog.dismiss()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showPageTemplateDialog() {
@@ -311,7 +445,9 @@ class CanvasFragment : Fragment() {
     private fun updateInputEnabled() {
         val state = currentState as? CanvasUiState.Ready
         binding.drawingCanvas.isInputEnabled = state != null && !state.isPageChanging &&
-            !(state.isBusy && currentSettings.tool == DrawingTool.ERASER)
+            !(state.isBusy && currentSettings.tool in setOf(
+                DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
+            ))
     }
 
     private fun colorButtons(): List<MaterialButton> = with(binding) {
@@ -334,8 +470,12 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokesErased = null
         binding.drawingCanvas.onAreaErased = null
         binding.drawingCanvas.onViewportChanged = null
+        binding.drawingCanvas.onTextRequested = null
+        binding.drawingCanvas.onSelectionChanged = null
+        binding.drawingCanvas.onSelectionTransformed = null
         binding.pageList.adapter = null
         renderedStrokes = emptyList()
+        renderedTexts = emptyList()
         renderedPageId = null
         _binding = null
         super.onDestroyView()
@@ -344,5 +484,7 @@ class CanvasFragment : Fragment() {
     private companion object {
         const val NOTE_ID_ARGUMENT = "noteId"
         const val INVALID_NOTE_ID = -1L
+        const val DEFAULT_TEXT_WIDTH = 0.35f
+        const val PASTE_OFFSET_DP = 24f
     }
 }

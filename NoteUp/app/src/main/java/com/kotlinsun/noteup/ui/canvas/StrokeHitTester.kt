@@ -32,6 +32,27 @@ object StrokeHitTester {
         val maxY = screenPoints.maxOf { it.second } + hitRadius
         if (eraserX !in minX..maxX || eraserY !in minY..maxY) return false
 
+        if (screenPoints.size >= 2 && tool == StrokeTool.RECTANGLE) {
+            val left = screenPoints.minOf { it.first }
+            val right = screenPoints.maxOf { it.first }
+            val top = screenPoints.minOf { it.second }
+            val bottom = screenPoints.maxOf { it.second }
+            return listOf(
+                floatArrayOf(left, top, right, top),
+                floatArrayOf(right, top, right, bottom),
+                floatArrayOf(right, bottom, left, bottom),
+                floatArrayOf(left, bottom, left, top),
+            ).any { edge ->
+                distanceToSegment(eraserX, eraserY, edge[0], edge[1], edge[2], edge[3]) <= hitRadius
+            }
+        }
+        if (screenPoints.size >= 2 && tool == StrokeTool.CIRCLE) {
+            val centerX = (screenPoints.first().first + screenPoints.last().first) / 2f
+            val centerY = (screenPoints.first().second + screenPoints.last().second) / 2f
+            val radius = kotlin.math.abs(screenPoints.last().first - screenPoints.first().first) / 2f
+            return kotlin.math.abs(distance(eraserX, eraserY, centerX, centerY) - radius) <= hitRadius
+        }
+
         if (screenPoints.size == 1) {
             return distance(eraserX, eraserY, screenPoints[0].first, screenPoints[0].second) <= hitRadius
         }

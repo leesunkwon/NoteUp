@@ -5,9 +5,11 @@ import android.graphics.Color
 import android.graphics.Paint
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
+import com.kotlinsun.noteup.domain.model.CanvasText
 
 class PageRenderer(
     private val strokeRenderer: StrokeRenderer = StrokeRenderer(),
+    private val textRenderer: CanvasTextRenderer = CanvasTextRenderer(),
 ) {
     private val templatePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(220, 224, 230)
@@ -21,14 +23,22 @@ class PageRenderer(
         density: Float,
         template: PageTemplate,
         strokes: List<Stroke>,
+        texts: List<CanvasText> = emptyList(),
     ) {
         canvas.drawColor(Color.WHITE)
         drawTemplate(canvas, width, height, density, template)
-        strokes.sortedBy(Stroke::strokeIndex).forEach { stroke ->
-            strokeRenderer.draw(
-                canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
-                density, stroke.tool,
-            )
+        val elements: List<Pair<Int, Any>> = strokes.map { it.strokeIndex to it as Any } +
+            texts.map { it.elementIndex to it as Any }
+        elements.sortedBy { it.first }.forEach { (_, element) ->
+            when (element) {
+                is Stroke -> {
+                strokeRenderer.draw(
+                    canvas, element.points, element.colorArgb, element.width, width, height,
+                    density, element.tool,
+                )
+                }
+                is CanvasText -> textRenderer.draw(canvas, element, width, height, density)
+            }
         }
     }
 

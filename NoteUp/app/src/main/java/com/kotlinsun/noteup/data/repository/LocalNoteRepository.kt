@@ -7,6 +7,9 @@ import com.kotlinsun.noteup.data.local.entity.NoteEntity
 import com.kotlinsun.noteup.data.local.entity.NotebookEntity
 import com.kotlinsun.noteup.data.local.entity.PageEntity
 import com.kotlinsun.noteup.data.local.entity.StrokeEntity
+import com.kotlinsun.noteup.data.local.entity.CanvasTextEntity
+import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.model.Page
@@ -26,6 +29,7 @@ class LocalNoteRepository(
     private val noteDao = database.noteDao()
     private val pageDao = database.pageDao()
     private val strokeDao = database.strokeDao()
+    private val canvasTextDao = database.canvasTextDao()
 
     override fun observeNotebooks(): Flow<List<Notebook>> =
         notebookDao.observeAll().map { notebooks -> notebooks.map { it.toDomain() } }
@@ -58,6 +62,9 @@ class LocalNoteRepository(
         strokeDao.observeByPage(pageId).map { strokes ->
             strokes.mapNotNull { it.toDomainOrNull() }
         }
+
+    override fun observeTexts(pageId: Long): Flow<List<CanvasText>> =
+        canvasTextDao.observeByPage(pageId).map { values -> values.map { it.toDomain() } }
 
     override suspend fun createNotebook(name: String): Long {
         val now = System.currentTimeMillis()
@@ -183,6 +190,9 @@ class LocalNoteRepository(
     override suspend fun getStrokes(pageId: Long): List<Stroke> =
         strokeDao.getByPage(pageId).mapNotNull { it.toDomainOrNull() }
 
+    override suspend fun getTexts(pageId: Long): List<CanvasText> =
+        canvasTextDao.getByPage(pageId).map { it.toDomain() }
+
     override suspend fun saveStroke(
         noteId: Long,
         pageId: Long,
@@ -190,7 +200,7 @@ class LocalNoteRepository(
     ): Stroke = database.withTransaction {
         require(stroke.points.size >= 2) { "A stroke requires at least two points" }
         val now = System.currentTimeMillis()
-        val strokeIndex = strokeDao.nextStrokeIndex(pageId)
+        val strokeIndex = nextElementIndex(pageId)
         val entity = StrokeEntity(
             pageId = pageId,
             strokeIndex = strokeIndex,
@@ -213,7 +223,7 @@ class LocalNoteRepository(
     ): List<Stroke> {
         if (strokes.isEmpty()) return emptyList()
         return database.withTransaction {
-            var nextIndex = strokeDao.nextStrokeIndex(pageId)
+            var nextIndex = nextElementIndex(pageId)
             val now = System.currentTimeMillis()
             strokes.map { stroke ->
                 require(stroke.points.size >= 2)
@@ -261,7 +271,7 @@ class LocalNoteRepository(
             val pageId = removed.first().pageId
             require(removed.all { it.pageId == pageId })
             strokeDao.deleteByIds(removed.map(Stroke::id).distinct())
-            var nextIndex = strokeDao.nextStrokeIndex(pageId)
+            var nextIndex = nextElementIndex(pageId)
             val now = System.currentTimeMillis()
             val inserted = replacements.map { draft ->
                 require(draft.points.size >= 2)
@@ -288,6 +298,145 @@ class LocalNoteRepository(
             noteDao.touch(noteId, System.currentTimeMillis())
         }
     }
+
+    override suspend fun addText(
+        noteId: Long,
+        pageId: Long,
+        draft: CanvasTextDraft,
+    ): CanvasText = database.withTransaction {
+        val now = System.currentTimeMillis()
+        val entity = CanvasTextEntity(
+            pageId = pageId,
+            elementIndex = nextElementIndex(pageId),
+            x = draft.x,
+            y = draft.y,
+            boxWidth = draft.boxWidth,
+            content = draft.content,
+            colorArgb = draft.colorArgb,
+            textSizeSp = draft.textSizeSp,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val saved = entity.copy(id = canvasTextDao.insert(entity)).toDomain()
+        noteDao.touch(noteId, now)
+        saved
+    }
+
+    override suspend fun updateStrokes(noteId: Long, strokes: List<Stroke>) {
+        if (strokes.isEmpty()) return
+        database.withTransaction {
+            strokeDao.updateAll(strokes.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun updateTexts(noteId: Long, texts: List<CanvasText>) {
+        if (texts.isEmpty()) return
+        database.withTransaction {
+            canvasTextDao.updateAll(texts.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun deleteTexts(noteId: Long, texts: List<CanvasText>) {
+        if (texts.isEmpty()) return
+        database.withTransaction {
+            canvasTextDao.deleteByIds(texts.map(CanvasText::id))
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun restoreTexts(noteId: Long, texts: List<CanvasText>) {
+        if (texts.isEmpty()) return
+        database.withTransaction {
+            canvasTextDao.insertAll(texts.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun updateElements(
+        noteId: Long,
+        strokes: List<Stroke>,
+        texts: List<CanvasText>,
+    ) {
+        if (strokes.isEmpty() && texts.isEmpty()) return
+        database.withTransaction {
+            if (strokes.isNotEmpty()) strokeDao.updateAll(strokes.map { it.toEntity() })
+            if (texts.isNotEmpty()) canvasTextDao.updateAll(texts.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun deleteElements(
+        noteId: Long,
+        strokes: List<Stroke>,
+        texts: List<CanvasText>,
+    ) {
+        if (strokes.isEmpty() && texts.isEmpty()) return
+        database.withTransaction {
+            if (strokes.isNotEmpty()) strokeDao.deleteByIds(strokes.map(Stroke::id))
+            if (texts.isNotEmpty()) canvasTextDao.deleteByIds(texts.map(CanvasText::id))
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun restoreElements(
+        noteId: Long,
+        strokes: List<Stroke>,
+        texts: List<CanvasText>,
+    ) {
+        if (strokes.isEmpty() && texts.isEmpty()) return
+        database.withTransaction {
+            if (strokes.isNotEmpty()) {
+                check(strokeDao.insertAll(strokes.map { it.toEntity() }).none { it == -1L })
+            }
+            if (texts.isNotEmpty()) canvasTextDao.insertAll(texts.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun copyElements(
+        noteId: Long,
+        pageId: Long,
+        strokes: List<StrokeDraft>,
+        texts: List<CanvasTextDraft>,
+    ): Pair<List<Stroke>, List<CanvasText>> = database.withTransaction {
+        val now = System.currentTimeMillis()
+        var elementIndex = nextElementIndex(pageId)
+        val savedStrokes = strokes.map { draft ->
+            val entity = StrokeEntity(
+                pageId = pageId,
+                strokeIndex = elementIndex++,
+                toolType = draft.tool.name,
+                colorArgb = draft.colorArgb,
+                strokeWidth = draft.width,
+                points = StrokePointCodec.encode(draft.points),
+                createdAt = now,
+            )
+            entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
+                ?: error("Copied stroke could not be decoded")
+        }
+        val savedTexts = texts.map { draft ->
+            val entity = CanvasTextEntity(
+                pageId = pageId,
+                elementIndex = elementIndex++,
+                x = draft.x,
+                y = draft.y,
+                boxWidth = draft.boxWidth,
+                content = draft.content,
+                colorArgb = draft.colorArgb,
+                textSizeSp = draft.textSizeSp,
+                createdAt = now,
+                updatedAt = now,
+            )
+            entity.copy(id = canvasTextDao.insert(entity)).toDomain()
+        }
+        noteDao.touch(noteId, now)
+        savedStrokes to savedTexts
+    }
+
+    private suspend fun nextElementIndex(pageId: Long): Int =
+        maxOf(strokeDao.maximumIndex(pageId), canvasTextDao.maximumIndex(pageId)) + 1
 
     private fun NotebookEntity.toDomain() = Notebook(
         id = id,
@@ -336,5 +485,13 @@ class LocalNoteRepository(
         strokeWidth = width,
         points = StrokePointCodec.encode(points),
         createdAt = createdAt,
+    )
+
+    private fun CanvasTextEntity.toDomain() = CanvasText(
+        id, pageId, elementIndex, x, y, boxWidth, content, colorArgb, textSizeSp, createdAt, updatedAt,
+    )
+
+    private fun CanvasText.toEntity() = CanvasTextEntity(
+        id, pageId, elementIndex, x, y, boxWidth, content, colorArgb, textSizeSp, createdAt, updatedAt,
     )
 }

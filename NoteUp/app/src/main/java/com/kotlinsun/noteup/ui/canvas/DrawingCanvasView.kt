@@ -20,6 +20,8 @@ import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.StrokePoint
 import com.kotlinsun.noteup.domain.model.StrokeTool
+import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.rendering.CanvasTextRenderer
 import com.kotlinsun.noteup.rendering.StrokeRenderer
 import com.kotlinsun.noteup.rendering.PageRenderer
 import kotlin.math.ceil
@@ -37,9 +39,13 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onStrokesErased: ((List<ErasableStroke>) -> Unit)? = null
     var onAreaErased: ((List<AreaEraseReplacement>) -> Unit)? = null
     var onViewportChanged: ((CanvasViewport) -> Unit)? = null
+    var onTextRequested: ((Float, Float) -> Unit)? = null
+    var onSelectionChanged: ((CanvasSelection) -> Unit)? = null
+    var onSelectionTransformed: ((SelectionChange) -> Unit)? = null
     var drawingSettings: DrawingSettings = DrawingSettings()
 
     private val renderer = StrokeRenderer()
+    private val textRenderer = CanvasTextRenderer()
     private val eraserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GRAY
         style = Paint.Style.STROKE
@@ -48,6 +54,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private val pageRenderer = PageRenderer(renderer)
     private val scaleDetector = ScaleGestureDetector(context, ScaleListener())
     private val storedStrokes = mutableListOf<Stroke>()
+    private val storedTexts = mutableListOf<CanvasText>()
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
     private val storedBounds = mutableMapOf<Long, RectF>()
     private val pendingBounds = mutableMapOf<Long, RectF>()
@@ -73,6 +80,42 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var lastGestureFocusX = 0f
     private var lastGestureFocusY = 0f
     private var isTouchGestureActive = false
+    private var selection = CanvasSelection()
+    private val selectionBounds = RectF()
+    private var selectionBeforeTransform: CanvasSelection? = null
+    private var selectionTransformMode = SelectionTransformMode.NONE
+    private var transformStartX = 0f
+    private var transformStartY = 0f
+    private val transformBaseBounds = RectF()
+
+    fun setTexts(texts: List<CanvasText>) {
+        storedTexts.clear()
+        storedTexts.addAll(texts)
+        selection = CanvasSelection(
+            selection.strokes.mapNotNull { selected -> storedStrokes.firstOrNull { it.id == selected.id } },
+            selection.texts.mapNotNull { selected -> texts.firstOrNull { it.id == selected.id } },
+        )
+        updateSelectionBounds()
+        rebuildStrokeBitmap()
+        invalidate()
+    }
+
+    fun currentSelection(): CanvasSelection = selection
+
+    fun selectElements(value: CanvasSelection) {
+        selection = value
+        updateSelectionBounds()
+        onSelectionChanged?.invoke(selection)
+        invalidate()
+    }
+
+    fun syncSelection(value: CanvasSelection) {
+        selection = value
+        updateSelectionBounds()
+        invalidate()
+    }
+
+    fun clearSelection() = selectElements(CanvasSelection())
 
     fun showPage(
         pageId: Long,
@@ -86,6 +129,8 @@ class DrawingCanvasView @JvmOverloads constructor(
             erasedInGesture.clear()
             eraserPath.clear()
             areaPreview = emptyList()
+            selection = CanvasSelection()
+            storedTexts.clear()
             currentPageId = pageId
         }
         pageTemplate = template
@@ -190,9 +235,13 @@ class DrawingCanvasView @JvmOverloads constructor(
         }
         areaPreview.filter { it.target is ErasableStroke.Pending }
             .flatMap(AreaEraseReplacement::fragments).forEach { drawStroke(canvas, it) }
-        if (activePoints.isNotEmpty() && activeSettings.tool != DrawingTool.ERASER) {
+        if (activePoints.isNotEmpty() && activeSettings.tool !in setOf(
+                DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
+            )
+        ) {
             drawStroke(canvas, activeDraft(activePoints))
         }
+        drawSelectionOverlay(canvas)
         val cursorX = eraserX
         val cursorY = eraserY
         if (cursorX != null && cursorY != null) {
@@ -244,6 +293,31 @@ class DrawingCanvasView @JvmOverloads constructor(
         activeBounds.set(screenX, screenY, screenX, screenY)
         val contentX = toContentX(screenX)
         val contentY = toContentY(screenY)
+        if (activeSettings.tool == DrawingTool.TEXT) {
+            onTextRequested?.invoke(
+                (contentX / width).coerceIn(0f, 1f),
+                (contentY / height).coerceIn(0f, 1f),
+            )
+            resetActiveInput()
+            return true
+        }
+        if (activeSettings.tool == DrawingTool.LASSO && !selection.isEmpty) {
+            val handleRadius = HANDLE_RADIUS_DP * resources.displayMetrics.density
+            selectionTransformMode = when {
+                distance(contentX, contentY, selectionBounds.right, selectionBounds.bottom) <= handleRadius ->
+                    SelectionTransformMode.RESIZE
+                selectionBounds.contains(contentX, contentY) -> SelectionTransformMode.MOVE
+                else -> SelectionTransformMode.NONE
+            }
+            if (selectionTransformMode != SelectionTransformMode.NONE) {
+                selectionBeforeTransform = selection
+                transformBaseBounds.set(selectionBounds)
+                transformStartX = contentX
+                transformStartY = contentY
+                return true
+            }
+            clearSelection()
+        }
         if (activeSettings.tool == DrawingTool.ERASER) {
             eraseAt(contentX, contentY)
             updateAreaPreviewIfNeeded()
@@ -258,6 +332,12 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun continueInput(event: MotionEvent): Boolean {
         val pointerIndex = event.findPointerIndex(activePointerId)
         if (pointerIndex < 0) return false
+        if (selectionTransformMode != SelectionTransformMode.NONE) {
+            updateSelectionTransform(
+                toContentX(event.getX(pointerIndex)), toContentY(event.getY(pointerIndex)),
+            )
+            return true
+        }
         for (historyIndex in 0 until event.historySize) {
             appendSample(
                 event.getHistoricalX(pointerIndex, historyIndex),
@@ -279,6 +359,19 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun finishInput(event: MotionEvent): Boolean {
         if (activePointerId == MotionEvent.INVALID_POINTER_ID) return false
         val pointerIndex = event.findPointerIndex(activePointerId)
+        if (selectionTransformMode != SelectionTransformMode.NONE) {
+            if (pointerIndex >= 0) updateSelectionTransform(
+                toContentX(event.getX(pointerIndex)), toContentY(event.getY(pointerIndex)),
+            )
+            val before = selectionBeforeTransform
+            if (before != null && before != selection) {
+                onSelectionTransformed?.invoke(SelectionChange(before, selection))
+            }
+            selectionBeforeTransform = null
+            selectionTransformMode = SelectionTransformMode.NONE
+            resetActiveInput()
+            return true
+        }
         if (pointerIndex >= 0) {
             appendSample(
                 event.getX(pointerIndex),
@@ -298,6 +391,8 @@ class DrawingCanvasView @JvmOverloads constructor(
             } else if (erasedInGesture.isNotEmpty()) {
                 onStrokesErased?.invoke(erasedInGesture.values.toList())
             }
+        } else if (activeSettings.tool == DrawingTool.LASSO) {
+            completeLassoSelection()
         } else if (activePoints.size >= MINIMUM_POINT_COUNT) {
             val pending = PendingCanvasStroke(nextToken++, activeDraft(activePoints.toList()))
             pendingStrokes += pending
@@ -480,7 +575,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun areaCollisionRadius(draft: StrokeDraft, density: Float): Float {
         val strokeRadius = when (draft.tool) {
             StrokeTool.HIGHLIGHTER -> draft.width * density / 2f
-            StrokeTool.PEN -> draft.width * 1.55f * density / 2f
+            else -> draft.width * 1.55f * density / 2f
         }
         return eraserRadiusPx() + strokeRadius
     }
@@ -494,6 +589,16 @@ class DrawingCanvasView @JvmOverloads constructor(
             activeSettings.highlighter.thickness.widthDp,
             points,
         )
+        DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE -> StrokeDraft(
+            when (activeSettings.tool) {
+                DrawingTool.LINE -> StrokeTool.LINE
+                DrawingTool.RECTANGLE -> StrokeTool.RECTANGLE
+                else -> StrokeTool.CIRCLE
+            },
+            activeSettings.pen.color.argb,
+            activeSettings.pen.thickness.widthDp,
+            shapePoints(points),
+        )
         else -> StrokeDraft(
             StrokeTool.PEN,
             activeSettings.pen.color.argb,
@@ -501,6 +606,146 @@ class DrawingCanvasView @JvmOverloads constructor(
             points,
         )
     }
+
+    private fun shapePoints(points: List<StrokePoint>): List<StrokePoint> {
+        if (points.size < 2) return points
+        val start = points.first()
+        val rawEnd = points.last()
+        if (activeSettings.tool != DrawingTool.CIRCLE) return listOf(start, rawEnd)
+        val dx = (rawEnd.x - start.x) * width
+        val dy = (rawEnd.y - start.y) * height
+        val size = min(kotlin.math.abs(dx), kotlin.math.abs(dy))
+        return listOf(
+            start,
+            rawEnd.copy(
+                x = (start.x + kotlin.math.sign(dx) * size / width).coerceIn(0f, 1f),
+                y = (start.y + kotlin.math.sign(dy) * size / height).coerceIn(0f, 1f),
+            ),
+        )
+    }
+
+    private fun completeLassoSelection() {
+        if (activePoints.size < 3) return
+        val lassoBounds = RectF(
+            activePoints.minOf { it.x } * width,
+            activePoints.minOf { it.y } * height,
+            activePoints.maxOf { it.x } * width,
+            activePoints.maxOf { it.y } * height,
+        )
+        val polygon = activePoints.map { it.x * width to it.y * height }
+        val strokes = storedStrokes.filter { stroke ->
+            storedBounds[stroke.id]?.let { RectF.intersects(it, lassoBounds) } == true &&
+                (stroke.points.any { pointInPolygon(it.x * width, it.y * height, polygon) } ||
+                    polygon.any { (x, y) -> storedBounds[stroke.id]?.contains(x, y) == true })
+        }
+        val texts = storedTexts.filter { text ->
+            val bounds = textBounds(text)
+            RectF.intersects(bounds, lassoBounds) && (
+                listOf(
+                    bounds.left to bounds.top, bounds.right to bounds.top,
+                    bounds.right to bounds.bottom, bounds.left to bounds.bottom,
+                ).any { (x, y) -> pointInPolygon(x, y, polygon) } ||
+                    polygon.any { (x, y) -> bounds.contains(x, y) }
+                )
+        }
+        selectElements(CanvasSelection(strokes, texts))
+    }
+
+    private fun pointInPolygon(x: Float, y: Float, polygon: List<Pair<Float, Float>>): Boolean {
+        if (polygon.size < 3) return false
+        var inside = false
+        var previous = polygon.last()
+        polygon.forEach { current ->
+            if ((current.second > y) != (previous.second > y) &&
+                x < (previous.first - current.first) * (y - current.second) /
+                (previous.second - current.second) + current.first
+            ) inside = !inside
+            previous = current
+        }
+        return inside
+    }
+
+    private fun updateSelectionBounds() {
+        selectionBounds.setEmpty()
+        selection.strokes.forEach { storedBounds[it.id]?.let(selectionBounds::union) }
+        selection.texts.forEach { selectionBounds.union(textBounds(it)) }
+    }
+
+    private fun textBounds(value: CanvasText): RectF = RectF(
+        value.x * width,
+        value.y * height,
+        (value.x + value.boxWidth) * width,
+        value.y * height + textRenderer.height(value, width, resources.displayMetrics.density),
+    )
+
+    private fun updateSelectionTransform(x: Float, y: Float) {
+        val source = selectionBeforeTransform ?: return
+        val dx = (x - transformStartX) / width
+        val dy = (y - transformStartY) / height
+        val maximumScale = min(
+            (width - transformBaseBounds.left) / transformBaseBounds.width().coerceAtLeast(1f),
+            (height - transformBaseBounds.top) / transformBaseBounds.height().coerceAtLeast(1f),
+        ).coerceAtLeast(0.1f)
+        val scale = if (selectionTransformMode == SelectionTransformMode.RESIZE) {
+            val base = max(transformBaseBounds.width(), transformBaseBounds.height()).coerceAtLeast(1f)
+            (1f + max(x - transformStartX, y - transformStartY) / base)
+                .coerceIn(0.1f, maximumScale)
+        } else 1f
+        val translatedX = if (selectionTransformMode == SelectionTransformMode.MOVE) {
+            dx.coerceIn(-transformBaseBounds.left / width, (width - transformBaseBounds.right) / width)
+        } else 0f
+        val translatedY = if (selectionTransformMode == SelectionTransformMode.MOVE) {
+            dy.coerceIn(-transformBaseBounds.top / height, (height - transformBaseBounds.bottom) / height)
+        } else 0f
+        val originX = transformBaseBounds.left / width
+        val originY = transformBaseBounds.top / height
+        fun point(p: StrokePoint) = p.copy(
+            x = originX + (p.x - originX) * scale + translatedX,
+            y = originY + (p.y - originY) * scale + translatedY,
+        )
+        val strokes = source.strokes.map { stroke ->
+            stroke.copy(points = stroke.points.map(::point), width = stroke.width * scale)
+        }
+        val texts = source.texts.map { text ->
+            text.copy(
+                x = originX + (text.x - originX) * scale + translatedX,
+                y = originY + (text.y - originY) * scale + translatedY,
+                boxWidth = (text.boxWidth * scale).coerceIn(0.05f, 1f),
+                textSizeSp = (text.textSizeSp * scale).coerceAtLeast(4f),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        strokes.forEach { changed -> storedStrokes.indexOfFirst { it.id == changed.id }.takeIf { it >= 0 }?.let { storedStrokes[it] = changed } }
+        texts.forEach { changed -> storedTexts.indexOfFirst { it.id == changed.id }.takeIf { it >= 0 }?.let { storedTexts[it] = changed } }
+        selection = CanvasSelection(strokes, texts)
+        rebuildBoundsCache()
+        rebuildStrokeBitmap()
+        updateSelectionBounds()
+        invalidate()
+    }
+
+    private fun drawSelectionOverlay(canvas: Canvas) {
+        if (activeSettings.tool == DrawingTool.LASSO && activePoints.size > 1 && selectionTransformMode == SelectionTransformMode.NONE) {
+            val path = android.graphics.Path()
+            path.moveTo(activePoints.first().x * width, activePoints.first().y * height)
+            activePoints.drop(1).forEach { path.lineTo(it.x * width, it.y * height) }
+            canvas.drawPath(path, selectionPaint)
+        }
+        if (!selectionBounds.isEmpty) {
+            canvas.drawRect(selectionBounds, selectionPaint)
+            canvas.drawCircle(selectionBounds.right, selectionBounds.bottom, HANDLE_RADIUS_DP * resources.displayMetrics.density, handlePaint)
+        }
+    }
+
+    private fun distance(x1: Float, y1: Float, x2: Float, y2: Float) =
+        kotlin.math.hypot(x1 - x2, y1 - y2)
+
+    private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(37, 99, 235)
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * resources.displayMetrics.density
+    }
+    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(37, 99, 235) }
 
     private fun addPoint(x: Float, y: Float, pressure: Float, eventTime: Long) {
         activePoints += StrokePoint(
@@ -517,13 +762,19 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (width <= 0 || height <= 0) return
         strokeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
             val canvas = Canvas(bitmap)
-            storedStrokes.sortedBy(Stroke::strokeIndex)
-                .forEach { stroke ->
-                    renderer.draw(
-                        canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
-                        resources.displayMetrics.density, stroke.tool,
+            val elements: List<Pair<Int, Any>> = storedStrokes.map { it.strokeIndex to it as Any } +
+                storedTexts.map { it.elementIndex to it as Any }
+            elements.sortedBy { it.first }.forEach { (_, element) ->
+                when (element) {
+                    is Stroke -> renderer.draw(
+                        canvas, element.points, element.colorArgb, element.width, width, height,
+                        resources.displayMetrics.density, element.tool,
+                    )
+                    is CanvasText -> textRenderer.draw(
+                        canvas, element, width, height, resources.displayMetrics.density,
                     )
                 }
+            }
         }
     }
 
@@ -562,6 +813,9 @@ class DrawingCanvasView @JvmOverloads constructor(
                     resources.displayMetrics.density, stroke.tool,
                 )
             }
+        storedTexts.filter { RectF.intersects(textBounds(it), currentDirty) }
+            .sortedBy(CanvasText::elementIndex)
+            .forEach { textRenderer.draw(canvas, it, width, height, resources.displayMetrics.density) }
         areaPreview.filter { it.target is ErasableStroke.Persisted }
             .flatMap(AreaEraseReplacement::fragments)
             .forEach { drawStroke(canvas, it) }
@@ -662,7 +916,10 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val ERASER_RADIUS_DP = 12f
         const val MINIMUM_SCALE = 1f
         const val MAXIMUM_SCALE = 4f
+        const val HANDLE_RADIUS_DP = 10f
     }
+
+    private enum class SelectionTransformMode { NONE, MOVE, RESIZE }
 
     private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {

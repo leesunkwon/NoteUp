@@ -6,6 +6,8 @@ import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
+import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import kotlinx.coroutines.flow.Flow
 
 interface NoteRepository {
@@ -19,6 +21,7 @@ interface NoteRepository {
     fun observeFirstPage(noteId: Long): Flow<Page?>
     fun observeFirstPageIds(): Flow<Map<Long, Long>>
     fun observeStrokes(pageId: Long): Flow<List<Stroke>>
+    fun observeTexts(pageId: Long): Flow<List<CanvasText>>
     suspend fun createNotebook(name: String): Long
     suspend fun renameNotebook(notebookId: Long, name: String)
     suspend fun deleteNotebook(notebookId: Long)
@@ -36,6 +39,7 @@ interface NoteRepository {
     suspend fun getPage(pageId: Long): Page?
     suspend fun getPages(noteId: Long): List<Page>
     suspend fun getStrokes(pageId: Long): List<Stroke>
+    suspend fun getTexts(pageId: Long): List<CanvasText>
     suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Stroke
     suspend fun saveStrokes(noteId: Long, pageId: Long, strokes: List<StrokeDraft>): List<Stroke>
     suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>)
@@ -46,4 +50,18 @@ interface NoteRepository {
         replacements: List<StrokeDraft>,
     ): List<Stroke>
     suspend fun clearStrokes(noteId: Long, pageId: Long)
+    suspend fun addText(noteId: Long, pageId: Long, draft: CanvasTextDraft): CanvasText
+    suspend fun updateStrokes(noteId: Long, strokes: List<Stroke>)
+    suspend fun updateTexts(noteId: Long, texts: List<CanvasText>)
+    suspend fun deleteTexts(noteId: Long, texts: List<CanvasText>)
+    suspend fun restoreTexts(noteId: Long, texts: List<CanvasText>)
+    suspend fun updateElements(noteId: Long, strokes: List<Stroke>, texts: List<CanvasText>)
+    suspend fun deleteElements(noteId: Long, strokes: List<Stroke>, texts: List<CanvasText>)
+    suspend fun restoreElements(noteId: Long, strokes: List<Stroke>, texts: List<CanvasText>)
+    suspend fun copyElements(
+        noteId: Long,
+        pageId: Long,
+        strokes: List<StrokeDraft>,
+        texts: List<CanvasTextDraft>,
+    ): Pair<List<Stroke>, List<CanvasText>>
 }

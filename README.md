@@ -34,6 +34,9 @@ NoteUp은 태블릿 가로 화면에서 실제 노트를 펼치듯 바로 기록
 - 페이지 썸네일 목록, 삭제 및 드래그 순서 변경
 - 대시보드 실제 필기 썸네일
 - 현재 페이지 편집 세션의 Undo / Redo
+- 올가미로 필기·도형·텍스트 선택, 이동, 비율 조절, 복사·붙여넣기·삭제
+- 직선·사각형·원 도형과 색상·굵기 설정
+- 다중 행 텍스트 상자와 3단계 글자 크기
 - 획을 정규화 좌표로 저장하여 화면 크기가 달라도 복원 가능
 - 저장 대기 획과 저장 완료 획을 자연스럽게 전환해 필기 깜빡임 최소화
 
@@ -59,7 +62,7 @@ NoteUp은 태블릿 가로 화면에서 실제 노트를 펼치듯 바로 기록
 - Kotlin / XML View / ViewBinding
 - Single Activity + Fragment + Navigation Component
 - MVVM: ViewModel, StateFlow, SavedStateHandle
-- Room 2.8.4 + KSP 2.3.9
+- Room 2.8.4 + KSP 2.3.9 (DB schema v4)
 - Material 3, RecyclerView
 - 최소 지원 Android API 26
 

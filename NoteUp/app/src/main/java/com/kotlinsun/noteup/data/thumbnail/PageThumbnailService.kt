@@ -46,8 +46,11 @@ class PageThumbnailService(
             return
         }
         val strokes = repository.getStrokes(pageId)
+        val texts = repository.getTexts(pageId)
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
-        renderer.draw(Canvas(bitmap), WIDTH, HEIGHT, THUMBNAIL_DENSITY, page.templateType, strokes)
+        renderer.draw(
+            Canvas(bitmap), WIDTH, HEIGHT, THUMBNAIL_DENSITY, page.templateType, strokes, texts,
+        )
         store.write(pageId, bitmap)
     }
 
