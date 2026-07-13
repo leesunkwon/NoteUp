@@ -8,6 +8,8 @@ import androidx.savedstate.SavedStateRegistryOwner
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.repository.NoteRepository
+import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
+import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,6 +24,8 @@ import kotlinx.coroutines.launch
 class DashboardViewModel(
     private val repository: NoteRepository,
     private val savedStateHandle: SavedStateHandle,
+    private val thumbnailStore: PageThumbnailStore,
+    private val thumbnailService: PageThumbnailService,
 ) : ViewModel() {
 
     private val filterType = savedStateHandle.getStateFlow(FILTER_TYPE_KEY, FILTER_ALL)
@@ -50,9 +54,22 @@ class DashboardViewModel(
         }
     }
 
+    private val noteItems = combine(
+        notes,
+        repository.observeFirstPageIds(),
+        thumbnailStore.revisions,
+    ) { notes, firstPageIds, revisions ->
+        val pageIds = notes.mapNotNull { firstPageIds[it.id] }
+        thumbnailService.ensure(pageIds)
+        notes.map { note ->
+            val pageId = firstPageIds[note.id]
+            DashboardNoteItem(note, pageId, pageId?.let { revisions[it] } ?: 0L)
+        }
+    }
+
     val uiState: StateFlow<DashboardUiState> = combine(
         repository.observeNotebooks(),
-        notes,
+        noteItems,
         selectedFilter,
     ) { notebooks, notes, filter ->
         DashboardUiState(notebooks = notebooks, notes = notes, filter = filter)
@@ -107,7 +124,9 @@ class DashboardViewModel(
     }
 
     fun deleteNote(note: Note) = launchDataOperation {
+        val pages = repository.getPages(note.id)
         repository.deleteNote(note.id)
+        pages.forEach { runCatching { thumbnailService.delete(it.id) } }
     }
 
     private fun updateFilter(type: String) {
@@ -134,13 +153,17 @@ class DashboardViewModel(
     class Factory(
         owner: SavedStateRegistryOwner,
         private val repository: NoteRepository,
+        private val thumbnailStore: PageThumbnailStore,
+        private val thumbnailService: PageThumbnailService,
     ) : AbstractSavedStateViewModelFactory(owner, null) {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
             key: String,
             modelClass: Class<T>,
             handle: SavedStateHandle,
-        ): T = DashboardViewModel(repository, handle) as T
+        ): T = DashboardViewModel(
+            repository, handle, thumbnailStore, thumbnailService,
+        ) as T
     }
 
     private companion object {

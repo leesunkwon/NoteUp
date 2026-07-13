@@ -69,4 +69,10 @@
     <string name="template_blank">백지</string>
     <string name="template_lined">줄노트</string>
     <string name="template_grid">모눈</string>
+    <string name="page_list">페이지 목록</string>
+    <string name="close">닫기</string>
+    <string name="page_number">%1$d페이지</string>
+    <string name="page_preview">페이지 필기 미리보기</string>
+    <string name="delete_page_title">페이지 삭제</string>
+    <string name="delete_page_message">이 페이지의 필기 내용도 함께 삭제됩니다.</string>
 </resources>

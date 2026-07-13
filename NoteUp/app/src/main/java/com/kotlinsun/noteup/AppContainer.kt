@@ -7,6 +7,8 @@ import com.kotlinsun.noteup.data.local.DatabaseMigrations
 import com.kotlinsun.noteup.data.repository.LocalNoteRepository
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.domain.repository.NoteRepository
+import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
+import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 
 class AppContainer(context: Context) {
     private val database = Room.databaseBuilder(
@@ -16,5 +18,7 @@ class AppContainer(context: Context) {
     ).addMigrations(DatabaseMigrations.MIGRATION_1_2).build()
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
+    val pageThumbnailStore = PageThumbnailStore(context)
+    val pageThumbnailService = PageThumbnailService(noteRepository, pageThumbnailStore)
     val drawingToolSettingsStore = DrawingToolSettingsStore(context)
 }

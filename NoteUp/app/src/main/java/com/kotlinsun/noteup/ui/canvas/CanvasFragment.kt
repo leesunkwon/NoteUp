@@ -12,6 +12,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -26,6 +29,7 @@ import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.PenThickness
 import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.Stroke
 import kotlinx.coroutines.launch
 
@@ -36,13 +40,23 @@ class CanvasFragment : Fragment() {
     private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
+    private val pageAdapter by lazy {
+        val store = (requireActivity().application as NoteUpApplication).container.pageThumbnailStore
+        PageThumbnailAdapter(store, viewModel::selectPage, ::confirmPageDeletion, viewModel::reorderPages)
+    }
 
     private val noteId: Long by lazy {
         requireArguments().getLong(NOTE_ID_ARGUMENT, INVALID_NOTE_ID)
     }
     private val viewModel: CanvasViewModel by viewModels {
         val container = (requireActivity().application as NoteUpApplication).container
-        CanvasViewModel.Factory(noteId, container.noteRepository, container.drawingToolSettingsStore)
+        CanvasViewModel.Factory(
+            noteId,
+            container.noteRepository,
+            container.drawingToolSettingsStore,
+            container.pageThumbnailStore,
+            container.pageThumbnailService,
+        )
     }
 
     override fun onCreateView(
@@ -62,6 +76,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onAreaErased = viewModel::eraseArea
         binding.drawingCanvas.onViewportChanged = viewModel::updateViewport
         setupToolbar()
+        setupPagePanel()
         observeState()
     }
 
@@ -88,6 +103,30 @@ class CanvasFragment : Fragment() {
         previousPageButton.setOnClickListener { viewModel.selectPreviousPage() }
         nextPageButton.setOnClickListener { viewModel.selectNextPage() }
         addPageButton.setOnClickListener { showPageTemplateDialog() }
+        pageListButton.setOnClickListener { pagePanel.isVisible = !pagePanel.isVisible }
+        closePagePanelButton.setOnClickListener { pagePanel.isVisible = false }
+    }
+
+    private fun setupPagePanel() = with(binding) {
+        pageList.layoutManager = LinearLayoutManager(requireContext())
+        pageList.adapter = pageAdapter
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0,
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder,
+            ): Boolean {
+                pageAdapter.move(viewHolder.bindingAdapterPosition, target.bindingAdapterPosition)
+                return true
+            }
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                pageAdapter.commitOrder()
+            }
+        }).attachToRecyclerView(pageList)
     }
 
     private fun observeState() {
@@ -122,6 +161,7 @@ class CanvasFragment : Fragment() {
                 state.pagePosition + 1,
                 state.pages.size,
             )
+            pageAdapter.submitPages(state.pages, state.page.id, state.thumbnailRevisions)
             if (renderedPageId != state.page.id) {
                 renderedPageId = state.page.id
                 renderedStrokes = state.strokes
@@ -249,6 +289,15 @@ class CanvasFragment : Fragment() {
             .show()
     }
 
+    private fun confirmPageDeletion(page: Page) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.delete_page_title)
+            .setMessage(R.string.delete_page_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ -> viewModel.deletePage(page) }
+            .show()
+    }
+
     private fun handleEvent(event: CanvasEvent) = when (event) {
         is CanvasEvent.PendingPersisted -> Unit
         is CanvasEvent.PendingDiscarded -> binding.drawingCanvas.discardPendingStroke(event.token)
@@ -285,6 +334,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokesErased = null
         binding.drawingCanvas.onAreaErased = null
         binding.drawingCanvas.onViewportChanged = null
+        binding.pageList.adapter = null
         renderedStrokes = emptyList()
         renderedPageId = null
         _binding = null

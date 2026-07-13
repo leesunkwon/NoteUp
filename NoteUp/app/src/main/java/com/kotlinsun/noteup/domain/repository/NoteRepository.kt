@@ -16,6 +16,7 @@ interface NoteRepository {
     fun observeNotes(notebookId: Long): Flow<List<Note>>
     fun observePages(noteId: Long): Flow<List<Page>>
     fun observeFirstPage(noteId: Long): Flow<Page?>
+    fun observeFirstPageIds(): Flow<Map<Long, Long>>
     fun observeStrokes(pageId: Long): Flow<List<Stroke>>
     suspend fun createNotebook(name: String): Long
     suspend fun renameNotebook(notebookId: Long, name: String)
@@ -26,8 +27,13 @@ interface NoteRepository {
     suspend fun deleteNote(noteId: Long)
     suspend fun createPage(noteId: Long, template: PageTemplate): Long
     suspend fun updatePageTemplate(pageId: Long, template: PageTemplate)
-    suspend fun deletePage(pageId: Long)
+    suspend fun deletePage(noteId: Long, pageId: Long)
+    suspend fun reorderPages(noteId: Long, orderedPageIds: List<Long>)
+    suspend fun getPage(pageId: Long): Page?
+    suspend fun getPages(noteId: Long): List<Page>
+    suspend fun getStrokes(pageId: Long): List<Stroke>
     suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Stroke
+    suspend fun saveStrokes(noteId: Long, pageId: Long, strokes: List<StrokeDraft>): List<Stroke>
     suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>)
     suspend fun restoreStrokes(noteId: Long, strokes: List<Stroke>)
     suspend fun replaceStrokes(

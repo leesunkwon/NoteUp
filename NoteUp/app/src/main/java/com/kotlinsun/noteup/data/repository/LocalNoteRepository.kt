@@ -48,6 +48,9 @@ class LocalNoteRepository(
     override fun observeFirstPage(noteId: Long): Flow<Page?> =
         pageDao.observeFirstByNote(noteId).map { it?.toDomain() }
 
+    override fun observeFirstPageIds(): Flow<Map<Long, Long>> =
+        pageDao.observeFirstPageIds().map { rows -> rows.associate { it.noteId to it.pageId } }
+
     override fun observeStrokes(pageId: Long): Flow<List<Stroke>> =
         strokeDao.observeByPage(pageId).map { strokes ->
             strokes.mapNotNull { it.toDomainOrNull() }
@@ -123,9 +126,39 @@ class LocalNoteRepository(
         pageDao.updateTemplate(pageId, template.name, System.currentTimeMillis())
     }
 
-    override suspend fun deletePage(pageId: Long) {
+    override suspend fun deletePage(noteId: Long, pageId: Long) = database.withTransaction {
+        val pages = pageDao.getByNote(noteId)
+        require(pages.size > 1) { "The last page cannot be deleted" }
+        require(pages.any { it.id == pageId }) { "Page does not belong to note" }
         pageDao.delete(pageId)
+        val now = System.currentTimeMillis()
+        pageDao.moveIndexesToTemporaryRange(noteId)
+        pages.filterNot { it.id == pageId }.forEachIndexed { index, page ->
+            pageDao.updateIndex(page.id, index, now)
+        }
+        noteDao.touch(noteId, now)
     }
+
+    override suspend fun reorderPages(noteId: Long, orderedPageIds: List<Long>) =
+        database.withTransaction {
+            val pages = pageDao.getByNote(noteId)
+            require(orderedPageIds.size == pages.size &&
+                orderedPageIds.toSet() == pages.map { it.id }.toSet())
+            val now = System.currentTimeMillis()
+            pageDao.moveIndexesToTemporaryRange(noteId)
+            orderedPageIds.forEachIndexed { index, pageId ->
+                pageDao.updateIndex(pageId, index, now)
+            }
+            noteDao.touch(noteId, now)
+        }
+
+    override suspend fun getPage(pageId: Long): Page? = pageDao.getById(pageId)?.toDomain()
+
+    override suspend fun getPages(noteId: Long): List<Page> =
+        pageDao.getByNote(noteId).map { it.toDomain() }
+
+    override suspend fun getStrokes(pageId: Long): List<Stroke> =
+        strokeDao.getByPage(pageId).mapNotNull { it.toDomainOrNull() }
 
     override suspend fun saveStroke(
         noteId: Long,
@@ -148,6 +181,32 @@ class LocalNoteRepository(
         noteDao.touch(noteId, now)
         entity.copy(id = strokeId).toDomainOrNull()
             ?: error("Saved stroke could not be decoded")
+    }
+
+    override suspend fun saveStrokes(
+        noteId: Long,
+        pageId: Long,
+        strokes: List<StrokeDraft>,
+    ): List<Stroke> {
+        if (strokes.isEmpty()) return emptyList()
+        return database.withTransaction {
+            var nextIndex = strokeDao.nextStrokeIndex(pageId)
+            val now = System.currentTimeMillis()
+            strokes.map { stroke ->
+                require(stroke.points.size >= 2)
+                val entity = StrokeEntity(
+                    pageId = pageId,
+                    strokeIndex = nextIndex++,
+                    toolType = stroke.tool.name,
+                    colorArgb = stroke.colorArgb,
+                    strokeWidth = stroke.width,
+                    points = StrokePointCodec.encode(stroke.points),
+                    createdAt = now,
+                )
+                entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
+                    ?: error("Saved stroke could not be decoded")
+            }.also { noteDao.touch(noteId, now) }
+        }
     }
 
     override suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>) {

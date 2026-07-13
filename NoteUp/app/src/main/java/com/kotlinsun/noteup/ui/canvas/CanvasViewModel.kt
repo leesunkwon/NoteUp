@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
+import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
+import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
 import com.kotlinsun.noteup.domain.model.EraserMode
@@ -33,12 +35,18 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+
+private const val ADD_BATCH_WINDOW_MILLIS = 20L
+private const val MAXIMUM_ADD_BATCH_SIZE = 16
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CanvasViewModel(
     private val noteId: Long,
     private val repository: NoteRepository,
     private val settingsStore: DrawingToolSettingsStore,
+    private val thumbnailStore: PageThumbnailStore,
+    private val thumbnailService: PageThumbnailService,
 ) : ViewModel() {
 
     private val operationQueue = Channel<CanvasOperation>(Channel.UNLIMITED)
@@ -71,7 +79,10 @@ class CanvasViewModel(
             if (note == null || page == null) {
                 flowOf<CanvasUiState>(CanvasUiState.NotFound)
             } else {
-                combine(repository.observeStrokes(page.id), suppressedStrokeIds) { strokes, hidden ->
+                thumbnailService.ensure(pages.map(Page::id))
+                combine(
+                    repository.observeStrokes(page.id), suppressedStrokeIds, thumbnailStore.revisions,
+                ) { strokes, hidden, revisions ->
                     CanvasUiState.Ready(
                         note = note,
                         pages = pages,
@@ -79,6 +90,7 @@ class CanvasViewModel(
                         pagePosition = pages.indexOfFirst { it.id == page.id },
                         strokes = strokes.filterNot { it.id in hidden },
                         viewport = CanvasViewport(),
+                        thumbnailRevisions = revisions,
                         isSaving = false,
                         isBusy = false,
                         isPageChanging = false,
@@ -110,11 +122,49 @@ class CanvasViewModel(
 
     init {
         persistenceScope.launch {
-            for (operation in operationQueue) {
-                processOperation(operation)
-                if (operation is CanvasOperation.CreatePage) pageCreationInProgress.value = false
-                pendingOperations.update { (it - 1).coerceAtLeast(0) }
+            var deferredOperation: CanvasOperation? = null
+            while (true) {
+                val operation = deferredOperation ?: operationQueue.receiveCatching().getOrNull() ?: break
+                deferredOperation = null
+                if (operation is CanvasOperation.Add) {
+                    delay(ADD_BATCH_WINDOW_MILLIS)
+                    val batch = mutableListOf(operation)
+                    while (batch.size < MAXIMUM_ADD_BATCH_SIZE) {
+                        val next = operationQueue.tryReceive().getOrNull() ?: break
+                        if (next is CanvasOperation.Add && next.pageId == operation.pageId) {
+                            batch += next
+                        } else {
+                            deferredOperation = next
+                            break
+                        }
+                    }
+                    processAddBatch(batch)
+                    pendingOperations.update { (it - batch.size).coerceAtLeast(0) }
+                } else {
+                    processOperation(operation)
+                    if (operation is CanvasOperation.PageOperation) pageCreationInProgress.value = false
+                    pendingOperations.update { (it - 1).coerceAtLeast(0) }
+                }
             }
+        }
+    }
+
+    private suspend fun processAddBatch(operations: List<CanvasOperation.Add>) {
+        runCatching {
+            val saved = repository.saveStrokes(
+                noteId, operations.first().pageId, operations.map { it.stroke.draft },
+            )
+            operations.zip(saved).forEach { (operation, stroke) ->
+                tokenToStroke[operation.stroke.token] = stroke
+                if (operation.stroke.token in tokensScheduledForErase) suppress(stroke.id)
+                pushNewCommand(CanvasCommand.AddStroke(stroke))
+                _events.tryEmit(CanvasEvent.PendingPersisted(operation.stroke.token))
+            }
+            thumbnailService.request(operations.first().pageId)
+        }.onFailure {
+            operations.forEach { rollbackVisualState(it) }
+            _errors.tryEmit(Unit)
+            _events.tryEmit(CanvasEvent.RefreshStrokes)
         }
     }
 
@@ -170,6 +220,30 @@ class CanvasViewModel(
         switchPage(state.pages[state.pagePosition + 1])
     }
 
+    fun selectPage(page: Page) {
+        if (pendingOperations.value == 0) switchPage(page)
+    }
+
+    fun deletePage(page: Page) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0 || state.pages.size <= 1) return
+        val index = state.pages.indexOfFirst { it.id == page.id }
+        val nextPageId = if (page.id == state.page.id) {
+            state.pages.getOrNull(index + 1)?.id ?: state.pages.getOrNull(index - 1)?.id
+        } else state.page.id
+        pageCreationInProgress.value = true
+        if (!enqueue(CanvasOperation.DeletePage(page.id, nextPageId))) {
+            pageCreationInProgress.value = false
+        }
+    }
+
+    fun reorderPages(pageIds: List<Long>) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0 || pageIds == state.pages.map(Page::id)) return
+        pageCreationInProgress.value = true
+        if (!enqueue(CanvasOperation.ReorderPages(pageIds))) pageCreationInProgress.value = false
+    }
+
     fun createPage(template: PageTemplate) {
         if (pendingOperations.value == 0) {
             pageCreationInProgress.value = true
@@ -206,6 +280,8 @@ class CanvasViewModel(
                 is CanvasOperation.Erase -> processErase(operation.targets)
                 is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
                 is CanvasOperation.CreatePage -> processCreatePage(operation.template)
+                is CanvasOperation.DeletePage -> processDeletePage(operation.pageId, operation.nextPageId)
+                is CanvasOperation.ReorderPages -> repository.reorderPages(noteId, operation.pageIds)
                 CanvasOperation.Undo -> processUndo()
                 CanvasOperation.Redo -> processRedo()
             }
@@ -221,6 +297,7 @@ class CanvasViewModel(
         tokenToStroke[pending.token] = stroke
         if (pending.token in tokensScheduledForErase) suppress(stroke.id)
         pushNewCommand(CanvasCommand.AddStroke(stroke))
+        thumbnailService.request(pageId)
         _events.tryEmit(CanvasEvent.PendingPersisted(pending.token))
     }
 
@@ -237,6 +314,7 @@ class CanvasViewModel(
         if (strokes.isEmpty()) return
         strokes.forEach { suppress(it.id) }
         repository.deleteStrokes(noteId, strokes)
+        thumbnailService.request(strokes.first().pageId)
         pushNewCommand(CanvasCommand.DeleteStrokes(strokes))
     }
 
@@ -255,6 +333,7 @@ class CanvasViewModel(
         val removed = resolved.map { it.first }.distinctBy(Stroke::id)
         removed.forEach { suppress(it.id) }
         val added = repository.replaceStrokes(noteId, removed, resolved.flatMap { it.second })
+        thumbnailService.request(removed.first().pageId)
         pushNewCommand(CanvasCommand.ReplaceStrokes(removed, added))
     }
 
@@ -263,6 +342,15 @@ class CanvasViewModel(
         clearPageSession()
         selectedPageId.value = pageId
         viewportState.update { it + (pageId to CanvasViewport()) }
+        thumbnailService.request(pageId)
+    }
+
+    private suspend fun processDeletePage(pageId: Long, nextPageId: Long?) {
+        repository.deletePage(noteId, pageId)
+        runCatching { thumbnailService.delete(pageId) }
+        viewportState.update { it - pageId }
+        clearPageSession()
+        selectedPageId.value = nextPageId
     }
 
     private fun switchPage(page: Page) {
@@ -285,6 +373,7 @@ class CanvasViewModel(
         undoStack.removeLast()
         redoStack.addLast(command)
         publishHistoryState()
+        command.pageId()?.let(thumbnailService::request)
     }
 
     private suspend fun processRedo() {
@@ -293,6 +382,7 @@ class CanvasViewModel(
         redoStack.removeLast()
         undoStack.addLast(command)
         publishHistoryState()
+        command.pageId()?.let(thumbnailService::request)
     }
 
     private suspend fun apply(command: CanvasCommand) {
@@ -361,6 +451,8 @@ class CanvasViewModel(
                 }
             }
             is CanvasOperation.CreatePage -> Unit
+            is CanvasOperation.DeletePage -> Unit
+            is CanvasOperation.ReorderPages -> Unit
             CanvasOperation.Undo -> rollbackUndo()
             CanvasOperation.Redo -> rollbackRedo()
         }
@@ -417,6 +509,12 @@ class CanvasViewModel(
         historyState.value = HistoryState(undoStack.isNotEmpty(), redoStack.isNotEmpty())
     }
 
+    private fun CanvasCommand.pageId(): Long? = when (this) {
+        is CanvasCommand.AddStroke -> stroke.pageId
+        is CanvasCommand.DeleteStrokes -> strokes.firstOrNull()?.pageId
+        is CanvasCommand.ReplaceStrokes -> before.firstOrNull()?.pageId ?: after.firstOrNull()?.pageId
+    }
+
     override fun onCleared() {
         operationQueue.close()
         super.onCleared()
@@ -426,7 +524,10 @@ class CanvasViewModel(
         data class Add(val stroke: PendingCanvasStroke, val pageId: Long) : CanvasOperation
         data class Erase(val targets: List<ErasableStroke>) : CanvasOperation
         data class AreaErase(val replacements: List<AreaEraseReplacement>) : CanvasOperation
-        data class CreatePage(val template: PageTemplate) : CanvasOperation
+        sealed interface PageOperation : CanvasOperation
+        data class CreatePage(val template: PageTemplate) : PageOperation
+        data class DeletePage(val pageId: Long, val nextPageId: Long?) : PageOperation
+        data class ReorderPages(val pageIds: List<Long>) : PageOperation
         data object Undo : CanvasOperation
         data object Redo : CanvasOperation
     }
@@ -443,9 +544,13 @@ class CanvasViewModel(
         private val noteId: Long,
         private val repository: NoteRepository,
         private val settingsStore: DrawingToolSettingsStore,
+        private val thumbnailStore: PageThumbnailStore,
+        private val thumbnailService: PageThumbnailService,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CanvasViewModel(noteId, repository, settingsStore) as T
+            CanvasViewModel(
+                noteId, repository, settingsStore, thumbnailStore, thumbnailService,
+            ) as T
     }
 }
