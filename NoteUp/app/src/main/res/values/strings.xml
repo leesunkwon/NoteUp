@@ -97,6 +97,9 @@
     <string name="line_tool">직선</string>
     <string name="rectangle_tool">사각형</string>
     <string name="circle_tool">원</string>
+    <string name="shape_tool">도형</string>
+    <string name="more">더보기</string>
+    <string name="lasso_select_hint">올가미로 편집할 요소를 선택하세요.</string>
     <string name="text_tool">텍스트</string>
     <string name="copy_selection">복사</string>
     <string name="paste_selection">붙여넣기</string>

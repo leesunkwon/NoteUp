@@ -28,10 +28,9 @@
 
         <TextView
             android:id="@+id/note_title"
-            android:layout_width="0dp"
+            android:layout_width="@dimen/canvas_title_width"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/spacing_medium"
-            android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
             android:textAppearance="@style/TextAppearance.NoteUp.Body"
@@ -42,7 +41,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_marginHorizontal="@dimen/spacing_small"
-            android:layout_weight="2"
+            android:layout_weight="1"
             android:fillViewport="false"
             android:scrollbars="none">
 
@@ -81,25 +80,11 @@
                     android:text="@string/lasso_tool" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/line_tool_button"
+                    android:id="@+id/shape_tool_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/line_tool" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/rectangle_tool_button"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/rectangle_tool" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/circle_tool_button"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/circle_tool" />
+                    android:text="@string/shape_tool" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/text_tool_button"
@@ -107,8 +92,76 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/text_tool" />
+            </LinearLayout>
+        </HorizontalScrollView>
 
-                <com.google.android.material.button.MaterialButton
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/undo_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/undo" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/redo_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/redo" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/more_button"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/more" />
+
+        <TextView
+            android:id="@+id/save_status"
+            android:layout_width="@dimen/save_status_width"
+            android:layout_height="wrap_content"
+            android:gravity="end|center_vertical"
+            android:text="@string/saved"
+            android:textColor="@color/noteup_secondary_text" />
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:id="@+id/context_toolbar"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/canvas_context_toolbar_height"
+        android:background="@color/noteup_background"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/spacing_large">
+
+                <TextView
+                    android:id="@+id/lasso_hint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/lasso_select_hint"
+                    android:textColor="@color/noteup_secondary_text"
+                    android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/edit_text_button"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_text"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
                     android:id="@+id/copy_selection_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
@@ -116,7 +169,7 @@
                     android:text="@string/copy_selection"
                     android:visibility="gone" />
 
-                <com.google.android.material.button.MaterialButton
+            <com.google.android.material.button.MaterialButton
                     android:id="@+id/paste_selection_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
@@ -124,15 +177,7 @@
                     android:text="@string/paste_selection"
                     android:visibility="gone" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/edit_text_button"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/edit_text"
-                    android:visibility="gone" />
-
-                <com.google.android.material.button.MaterialButton
+            <com.google.android.material.button.MaterialButton
                     android:id="@+id/delete_selection_button"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
@@ -243,40 +288,8 @@
                     android:layout_height="wrap_content"
                     android:text="@string/pen_thick" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/undo_button"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/spacing_small"
-                    android:enabled="false"
-                    android:text="@string/undo" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/redo_button"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:enabled="false"
-                    android:text="@string/redo" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/export_button"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/export" />
             </LinearLayout>
         </HorizontalScrollView>
-
-        <TextView
-            android:id="@+id/save_status"
-            android:layout_width="@dimen/save_status_width"
-            android:layout_height="wrap_content"
-            android:gravity="end|center_vertical"
-            android:text="@string/saved"
-            android:textColor="@color/noteup_secondary_text" />
-    </LinearLayout>
 
     <com.kotlinsun.noteup.ui.canvas.DrawingCanvasView
         android:id="@+id/drawing_canvas"
@@ -287,7 +300,7 @@
         app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar" />
+        app:layout_constraintTop_toBottomOf="@id/context_toolbar" />
 
     <LinearLayout
         android:id="@+id/page_navigation_bar"
@@ -358,7 +371,7 @@
         app:cardElevation="8dp"
         app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar"
+        app:layout_constraintTop_toBottomOf="@id/context_toolbar"
         tools:visibility="visible">
 
         <LinearLayout
