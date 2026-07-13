@@ -8,11 +8,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
+import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 
 class TrashCleanupService(
     private val repository: NoteRepository,
     private val retentionStore: TrashRetentionStore,
     private val thumbnailService: PageThumbnailService,
+    private val pdfDocumentStore: PdfDocumentStore,
+    private val pdfPageRenderStore: PdfPageRenderStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val running = AtomicBoolean(false)
@@ -36,8 +40,13 @@ class TrashCleanupService(
     private suspend fun cleanup() {
         val days = retentionStore.current().days ?: return
         val cutoff = System.currentTimeMillis() - days * MILLIS_PER_DAY
-        repository.purgeExpiredNotes(cutoff).forEach { pageId ->
+        val assets = repository.purgeExpiredNotes(cutoff)
+        assets.pageIds.forEach { pageId ->
             runCatching { thumbnailService.delete(pageId) }
+        }
+        assets.pdfStorageNames.forEach { storageName ->
+            pdfPageRenderStore.evict(storageName)
+            pdfDocumentStore.delete(storageName)
         }
     }
 

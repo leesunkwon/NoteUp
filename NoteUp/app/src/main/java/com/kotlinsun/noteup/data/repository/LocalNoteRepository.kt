@@ -8,6 +8,9 @@ import com.kotlinsun.noteup.data.local.entity.NotebookEntity
 import com.kotlinsun.noteup.data.local.entity.PageEntity
 import com.kotlinsun.noteup.data.local.entity.StrokeEntity
 import com.kotlinsun.noteup.data.local.entity.CanvasTextEntity
+import com.kotlinsun.noteup.data.local.entity.ImportedPdfEntity
+import com.kotlinsun.noteup.data.local.entity.PdfPageBackgroundEntity
+import com.kotlinsun.noteup.data.local.dao.PageWithBackgroundRow
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.Note
@@ -17,6 +20,9 @@ import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.StrokeTool
+import com.kotlinsun.noteup.domain.model.DeletedAssets
+import com.kotlinsun.noteup.domain.model.PdfImportPage
+import com.kotlinsun.noteup.domain.model.PdfPageBackground
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -30,6 +36,8 @@ class LocalNoteRepository(
     private val pageDao = database.pageDao()
     private val strokeDao = database.strokeDao()
     private val canvasTextDao = database.canvasTextDao()
+    private val importedPdfDao = database.importedPdfDao()
+    private val pdfPageBackgroundDao = database.pdfPageBackgroundDao()
 
     override fun observeNotebooks(): Flow<List<Notebook>> =
         notebookDao.observeAll().map { notebooks -> notebooks.map { it.toDomain() } }
@@ -120,21 +128,73 @@ class LocalNoteRepository(
         check(noteDao.restore(noteId, System.currentTimeMillis()) == 1)
     }
 
-    override suspend fun permanentlyDeleteNote(noteId: Long): List<Long> =
+    override suspend fun permanentlyDeleteNote(noteId: Long): DeletedAssets =
         database.withTransaction {
             val pageIds = pageDao.getIdsByNoteIds(listOf(noteId))
+            val storageNames = importedPdfDao.getStorageNamesByNoteIds(listOf(noteId))
             check(noteDao.deleteTrashedByIds(listOf(noteId)) == 1)
-            pageIds
+            DeletedAssets(pageIds, storageNames)
         }
 
-    override suspend fun purgeExpiredNotes(cutoff: Long): List<Long> =
+    override suspend fun purgeExpiredNotes(cutoff: Long): DeletedAssets =
         database.withTransaction {
             val noteIds = noteDao.getExpiredIds(cutoff)
-            if (noteIds.isEmpty()) return@withTransaction emptyList()
+            if (noteIds.isEmpty()) return@withTransaction DeletedAssets()
             val pageIds = pageDao.getIdsByNoteIds(noteIds)
+            val storageNames = importedPdfDao.getStorageNamesByNoteIds(noteIds)
             noteDao.deleteTrashedByIds(noteIds)
-            pageIds
+            DeletedAssets(pageIds, storageNames)
         }
+
+    override suspend fun createImportedPdfNote(
+        title: String,
+        storageName: String,
+        displayName: String,
+        pages: List<PdfImportPage>,
+    ): Long = database.withTransaction {
+        require(pages.isNotEmpty())
+        val now = System.currentTimeMillis()
+        val noteId = noteDao.insert(
+            NoteEntity(
+                notebookId = null,
+                title = title,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+        val pdfId = importedPdfDao.insert(
+            ImportedPdfEntity(
+                noteId = noteId,
+                storageName = storageName,
+                displayName = displayName,
+                pageCount = pages.size,
+                createdAt = now,
+            ),
+        )
+        val backgrounds = pages.sortedBy(PdfImportPage::sourcePageIndex).mapIndexed { index, source ->
+            val pageId = pageDao.insert(
+                PageEntity(
+                    noteId = noteId,
+                    pageIndex = index,
+                    templateType = PageTemplate.BLANK.name,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+            PdfPageBackgroundEntity(
+                pageId = pageId,
+                pdfId = pdfId,
+                sourcePageIndex = source.sourcePageIndex,
+                widthPoints = source.widthPoints,
+                heightPoints = source.heightPoints,
+            )
+        }
+        pdfPageBackgroundDao.insertAll(backgrounds)
+        noteId
+    }
+
+    override suspend fun getReferencedPdfStorageNames(): Set<String> =
+        importedPdfDao.getAllStorageNames().toSet()
 
     override suspend fun createPage(noteId: Long, template: PageTemplate): Long =
         database.withTransaction {
@@ -156,10 +216,12 @@ class LocalNoteRepository(
         pageDao.updateTemplate(pageId, template.name, System.currentTimeMillis())
     }
 
-    override suspend fun deletePage(noteId: Long, pageId: Long) = database.withTransaction {
-        val pages = pageDao.getByNote(noteId)
+    override suspend fun deletePage(noteId: Long, pageId: Long): DeletedAssets = database.withTransaction {
+        val pages = pageDao.getEntitiesByNote(noteId)
         require(pages.size > 1) { "The last page cannot be deleted" }
         require(pages.any { it.id == pageId }) { "Page does not belong to note" }
+        val background = pdfPageBackgroundDao.getByPage(pageId)
+        val storageName = background?.let { importedPdfDao.getStorageNamesByNoteIds(listOf(noteId)).firstOrNull() }
         pageDao.delete(pageId)
         val now = System.currentTimeMillis()
         pageDao.moveIndexesToTemporaryRange(noteId)
@@ -167,11 +229,16 @@ class LocalNoteRepository(
             pageDao.updateIndex(page.id, index, now)
         }
         noteDao.touch(noteId, now)
+        val removedPdf = if (background != null && importedPdfDao.backgroundCount(background.pdfId) == 0) {
+            importedPdfDao.delete(background.pdfId)
+            listOfNotNull(storageName)
+        } else emptyList()
+        DeletedAssets(pageIds = listOf(pageId), pdfStorageNames = removedPdf)
     }
 
     override suspend fun reorderPages(noteId: Long, orderedPageIds: List<Long>) =
         database.withTransaction {
-            val pages = pageDao.getByNote(noteId)
+            val pages = pageDao.getEntitiesByNote(noteId)
             require(orderedPageIds.size == pages.size &&
                 orderedPageIds.toSet() == pages.map { it.id }.toSet())
             val now = System.currentTimeMillis()
@@ -454,13 +521,23 @@ class LocalNoteRepository(
         deletedAt = deletedAt,
     )
 
-    private fun PageEntity.toDomain() = Page(
-        id = id,
-        noteId = noteId,
-        pageIndex = pageIndex,
-        templateType = PageTemplate.valueOf(templateType),
-        createdAt = createdAt,
-        updatedAt = updatedAt,
+    private fun PageWithBackgroundRow.toDomain() = Page(
+        id = page.id,
+        noteId = page.noteId,
+        pageIndex = page.pageIndex,
+        templateType = PageTemplate.valueOf(page.templateType),
+        createdAt = page.createdAt,
+        updatedAt = page.updatedAt,
+        pdfBackground = pdfId?.let { id ->
+            PdfPageBackground(
+                pdfId = id,
+                storageName = requireNotNull(pdfStorageName),
+                displayName = requireNotNull(pdfDisplayName),
+                sourcePageIndex = requireNotNull(pdfSourcePageIndex),
+                widthPoints = requireNotNull(pdfWidthPoints),
+                heightPoints = requireNotNull(pdfHeightPoints),
+            )
+        },
     )
 
     private fun StrokeEntity.toDomainOrNull(): Stroke? = runCatching {

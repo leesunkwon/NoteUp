@@ -45,4 +45,15 @@ object DatabaseMigrations {
             database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_canvas_texts_pageId_elementIndex` ON `canvas_texts` (`pageId`, `elementIndex`)")
         }
     }
+
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("CREATE TABLE IF NOT EXISTS `imported_pdfs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `noteId` INTEGER NOT NULL, `storageName` TEXT NOT NULL, `displayName` TEXT NOT NULL, `pageCount` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_imported_pdfs_noteId` ON `imported_pdfs` (`noteId`)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_imported_pdfs_storageName` ON `imported_pdfs` (`storageName`)")
+            database.execSQL("CREATE TABLE IF NOT EXISTS `pdf_page_backgrounds` (`pageId` INTEGER NOT NULL, `pdfId` INTEGER NOT NULL, `sourcePageIndex` INTEGER NOT NULL, `widthPoints` INTEGER NOT NULL, `heightPoints` INTEGER NOT NULL, PRIMARY KEY(`pageId`), FOREIGN KEY(`pageId`) REFERENCES `pages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`pdfId`) REFERENCES `imported_pdfs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_pdf_page_backgrounds_pdfId` ON `pdf_page_backgrounds` (`pdfId`)")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_pdf_page_backgrounds_pdfId_sourcePageIndex` ON `pdf_page_backgrounds` (`pdfId`, `sourcePageIndex`)")
+        }
+    }
 }

@@ -44,6 +44,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onTextEditRequested: ((CanvasText) -> Unit)? = null
     var onSelectionChanged: ((CanvasSelection) -> Unit)? = null
     var onSelectionTransformed: ((SelectionChange) -> Unit)? = null
+    var onPageSwipe: ((PageSwipeDirection) -> Unit)? = null
     var drawingSettings: DrawingSettings = DrawingSettings()
         set(value) {
             if (field.tool == DrawingTool.TEXT && value.tool != DrawingTool.TEXT) {
@@ -61,6 +62,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         strokeWidth = resources.displayMetrics.density
     }
     private val pageRenderer = PageRenderer(renderer)
+    private var pdfBackgroundBitmap: Bitmap? = null
     private val scaleDetector = ScaleGestureDetector(context, ScaleListener())
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat()
@@ -91,6 +93,10 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var lastGestureFocusX = 0f
     private var lastGestureFocusY = 0f
     private var isTouchGestureActive = false
+    private var pageSwipePointerId = MotionEvent.INVALID_POINTER_ID
+    private var pageSwipeStartX = 0f
+    private var pageSwipeStartY = 0f
+    private var pageSwipeTracking = false
     private var selection = CanvasSelection()
     private val selectionBounds = RectF()
     private var selectionBeforeTransform: CanvasSelection? = null
@@ -155,10 +161,19 @@ class DrawingCanvasView @JvmOverloads constructor(
             selection = CanvasSelection()
             storedTexts.clear()
             currentPageId = pageId
+            pdfBackgroundBitmap = null
         }
         pageTemplate = template
         setViewport(viewport, notify = false)
         setStrokes(strokes)
+    }
+
+    fun setPdfBackground(bitmap: Bitmap?) {
+        if (pdfBackgroundBitmap === bitmap) return
+        pdfBackgroundBitmap = bitmap
+        rebuildBoundsCache()
+        rebuildStrokeBitmap()
+        invalidate()
     }
 
     fun setViewport(value: CanvasViewport, notify: Boolean = false) {
@@ -215,12 +230,17 @@ class DrawingCanvasView @JvmOverloads constructor(
             strokes.take(previousStrokes.size).map(Stroke::id) == previousStrokes.map(Stroke::id)
         if (appended) {
             val canvas = Canvas(checkNotNull(strokeBitmap))
+            val pageRect = pageContentRect()
+            canvas.save()
+            canvas.translate(pageRect.left, pageRect.top)
             strokes.drop(previousStrokes.size).forEach { stroke ->
                 renderer.draw(
-                    canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
+                    canvas, stroke.points, stroke.colorArgb, stroke.width,
+                    pageRect.width().toInt(), pageRect.height().toInt(),
                     resources.displayMetrics.density, stroke.tool,
                 )
             }
+            canvas.restore()
         } else rebuildStrokeBitmap()
         invalidate()
     }
@@ -328,6 +348,11 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (event.getToolType(actionIndex) != MotionEvent.TOOL_TYPE_STYLUS || width == 0 || height == 0) {
             return false
         }
+        val screenX = event.getX(actionIndex)
+        val screenY = event.getY(actionIndex)
+        val contentX = toContentX(screenX)
+        val contentY = toContentY(screenY)
+        if (!pageContentRect().contains(contentX, contentY)) return false
         activePointerId = event.getPointerId(actionIndex)
         activeSettings = drawingSettings
         strokeStartedAt = event.eventTime
@@ -338,13 +363,9 @@ class DrawingCanvasView @JvmOverloads constructor(
             areaPreview = emptyList()
             rebuildStrokeBitmap()
         }
-        val screenX = event.getX(actionIndex)
-        val screenY = event.getY(actionIndex)
         lastX = screenX
         lastY = screenY
         activeBounds.set(screenX, screenY, screenX, screenY)
-        val contentX = toContentX(screenX)
-        val contentY = toContentY(screenY)
         if (activeSettings.tool == DrawingTool.LASSO && !selection.isEmpty) {
             val handleRadius = HANDLE_RADIUS_DP * resources.displayMetrics.density
             selectionTransformMode = when {
@@ -468,18 +489,22 @@ class DrawingCanvasView @JvmOverloads constructor(
             return
         }
         val radius = eraserRadiusPx()
+        val pageRect = pageContentRect()
+        val localX = x - pageRect.left
+        val localY = y - pageRect.top
         val hitStored = storedStrokes.filter { stroke ->
             "stored:${stroke.id}" !in erasedInGesture &&
                 boundsHits(storedBounds[stroke.id], x, y, radius) && StrokeHitTester.hits(
-                stroke.points, stroke.tool, stroke.width, x, y, radius, width, height,
+                stroke.points, stroke.tool, stroke.width, localX, localY, radius,
+                pageRect.width().toInt(), pageRect.height().toInt(),
                 resources.displayMetrics.density,
             )
         }
         val hitPending = pendingStrokes.filter { pending ->
             "pending:${pending.token}" !in erasedInGesture &&
                 boundsHits(pendingBounds[pending.token], x, y, radius) && StrokeHitTester.hits(
-                pending.draft.points, pending.draft.tool, pending.draft.width, x, y, radius,
-                width, height, resources.displayMetrics.density,
+                pending.draft.points, pending.draft.tool, pending.draft.width, localX, localY, radius,
+                pageRect.width().toInt(), pageRect.height().toInt(), resources.displayMetrics.density,
             )
         }
         hitStored.forEach { erasedInGesture["stored:${it.id}"] = ErasableStroke.Persisted(it) }
@@ -527,6 +552,10 @@ class DrawingCanvasView @JvmOverloads constructor(
         textTouchDownScreenY = event.getY(actionIndex)
         textTouchDownContentX = toContentX(textTouchDownScreenX)
         textTouchDownContentY = toContentY(textTouchDownScreenY)
+        if (!pageContentRect().contains(textTouchDownContentX, textTouchDownContentY)) {
+            textPointerId = MotionEvent.INVALID_POINTER_ID
+            return false
+        }
         textTouchMoved = false
         textTouchTarget = findTopTextAt(textTouchDownContentX, textTouchDownContentY)
         textTouchTarget?.let { target ->
@@ -568,7 +597,12 @@ class DrawingCanvasView @JvmOverloads constructor(
         val screenX = event.getX(pointerIndex)
         val screenY = event.getY(pointerIndex)
         val target = textTouchTarget
-        if (textTouchMoved && selectionTransformMode == SelectionTransformMode.MOVE) {
+        if (textTouchMoved && target == null && isHorizontalPageSwipe(
+                textTouchDownScreenX, textTouchDownScreenY, screenX, screenY,
+            )
+        ) {
+            dispatchPageSwipe(textTouchDownScreenX, screenX)
+        } else if (textTouchMoved && selectionTransformMode == SelectionTransformMode.MOVE) {
             updateSelectionTransform(toContentX(screenX), toContentY(screenY))
             val before = selectionBeforeTransform
             if (before != null && before != selection) {
@@ -591,8 +625,8 @@ class DrawingCanvasView @JvmOverloads constructor(
             lastTextTapId = null
             clearSelection()
             onTextRequested?.invoke(
-                (toContentX(screenX) / width).coerceIn(0f, 1f),
-                (toContentY(screenY) / height).coerceIn(0f, 1f),
+                normalizedPageX(toContentX(screenX)),
+                normalizedPageY(toContentY(screenY)),
             )
         }
         resetTextInput()
@@ -636,25 +670,60 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun handleTouchGesture(event: MotionEvent, dispatchScaleEvent: Boolean = true): Boolean {
         if (dispatchScaleEvent) scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val actionIndex = event.actionIndex
+                if (event.getToolType(actionIndex) == MotionEvent.TOOL_TYPE_FINGER) {
+                    pageSwipePointerId = event.getPointerId(actionIndex)
+                    pageSwipeStartX = event.getX(actionIndex)
+                    pageSwipeStartY = event.getY(actionIndex)
+                    pageSwipeTracking = true
+                }
+            }
             MotionEvent.ACTION_POINTER_DOWN -> if (event.pointerCount >= 2) {
+                pageSwipeTracking = false
                 val (focusX, focusY) = gestureFocus(event)
                 lastGestureFocusX = focusX
                 lastGestureFocusY = focusY
                 isTouchGestureActive = true
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
-            MotionEvent.ACTION_MOVE -> if (isTouchGestureActive && event.pointerCount >= 2) {
-                val (focusX, focusY) = gestureFocus(event)
-                updateViewport(
-                    viewport.copy(
-                        offsetX = viewport.offsetX + focusX - lastGestureFocusX,
-                        offsetY = viewport.offsetY + focusY - lastGestureFocusY,
-                    ),
-                )
-                lastGestureFocusX = focusX
-                lastGestureFocusY = focusY
+            MotionEvent.ACTION_MOVE -> {
+                if (isTouchGestureActive && event.pointerCount >= 2) {
+                    val (focusX, focusY) = gestureFocus(event)
+                    updateViewport(
+                        viewport.copy(
+                            offsetX = viewport.offsetX + focusX - lastGestureFocusX,
+                            offsetY = viewport.offsetY + focusY - lastGestureFocusY,
+                        ),
+                    )
+                    lastGestureFocusX = focusX
+                    lastGestureFocusY = focusY
+                } else if (pageSwipeTracking) {
+                    val pointerIndex = event.findPointerIndex(pageSwipePointerId)
+                    if (pointerIndex >= 0) {
+                        val dx = event.getX(pointerIndex) - pageSwipeStartX
+                        val dy = event.getY(pointerIndex) - pageSwipeStartY
+                        if (kotlin.math.abs(dx) > touchSlop &&
+                            kotlin.math.abs(dx) > kotlin.math.abs(dy) * PAGE_SWIPE_DIRECTION_RATIO
+                        ) parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                }
             }
-            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
+                val pointerIndex = event.findPointerIndex(pageSwipePointerId)
+                if (pageSwipeTracking && pointerIndex >= 0 && isHorizontalPageSwipe(
+                        pageSwipeStartX,
+                        pageSwipeStartY,
+                        event.getX(pointerIndex),
+                        event.getY(pointerIndex),
+                    )
+                ) dispatchPageSwipe(pageSwipeStartX, event.getX(pointerIndex))
+                resetPageSwipe()
+                isTouchGestureActive = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                resetPageSwipe()
                 if (event.pointerCount <= 2) {
                     isTouchGestureActive = false
                     parent?.requestDisallowInterceptTouchEvent(false)
@@ -662,6 +731,33 @@ class DrawingCanvasView @JvmOverloads constructor(
             }
         }
         return true
+    }
+
+    private fun isHorizontalPageSwipe(
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float,
+    ): Boolean {
+        val dx = endX - startX
+        val dy = endY - startY
+        val minimumDistance = maxOf(
+            touchSlop * PAGE_SWIPE_SLOP_MULTIPLIER,
+            width * PAGE_SWIPE_WIDTH_RATIO,
+        )
+        return kotlin.math.abs(dx) >= minimumDistance &&
+            kotlin.math.abs(dx) > kotlin.math.abs(dy) * PAGE_SWIPE_DIRECTION_RATIO
+    }
+
+    private fun dispatchPageSwipe(startX: Float, endX: Float) {
+        onPageSwipe?.invoke(
+            if (endX < startX) PageSwipeDirection.NEXT else PageSwipeDirection.PREVIOUS,
+        )
+    }
+
+    private fun resetPageSwipe() {
+        pageSwipePointerId = MotionEvent.INVALID_POINTER_ID
+        pageSwipeTracking = false
     }
 
     private fun updateViewport(value: CanvasViewport) {
@@ -766,8 +862,8 @@ class DrawingCanvasView @JvmOverloads constructor(
         return (persisted + pending).mapNotNull { (target, draft) ->
             val keptGroups = mutableListOf<MutableList<StrokePoint>>()
             draft.points.forEach { point ->
-                val px = point.x * width
-                val py = point.y * height
+                val px = pageX(point.x)
+                val py = pageY(point.y)
                 val erased = eraserPath.any { (ex, ey) ->
                     val dx = px - ex
                     val dy = py - ey
@@ -831,14 +927,15 @@ class DrawingCanvasView @JvmOverloads constructor(
         val start = points.first()
         val rawEnd = points.last()
         if (activeSettings.tool != DrawingTool.CIRCLE) return listOf(start, rawEnd)
-        val dx = (rawEnd.x - start.x) * width
-        val dy = (rawEnd.y - start.y) * height
+        val pageRect = pageContentRect()
+        val dx = (rawEnd.x - start.x) * pageRect.width()
+        val dy = (rawEnd.y - start.y) * pageRect.height()
         val size = min(kotlin.math.abs(dx), kotlin.math.abs(dy))
         return listOf(
             start,
             rawEnd.copy(
-                x = (start.x + kotlin.math.sign(dx) * size / width).coerceIn(0f, 1f),
-                y = (start.y + kotlin.math.sign(dy) * size / height).coerceIn(0f, 1f),
+                x = (start.x + kotlin.math.sign(dx) * size / pageRect.width()).coerceIn(0f, 1f),
+                y = (start.y + kotlin.math.sign(dy) * size / pageRect.height()).coerceIn(0f, 1f),
             ),
         )
     }
@@ -846,15 +943,15 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun completeLassoSelection() {
         if (activePoints.size < 3) return
         val lassoBounds = RectF(
-            activePoints.minOf { it.x } * width,
-            activePoints.minOf { it.y } * height,
-            activePoints.maxOf { it.x } * width,
-            activePoints.maxOf { it.y } * height,
+            pageX(activePoints.minOf { it.x }),
+            pageY(activePoints.minOf { it.y }),
+            pageX(activePoints.maxOf { it.x }),
+            pageY(activePoints.maxOf { it.y }),
         )
-        val polygon = activePoints.map { it.x * width to it.y * height }
+        val polygon = activePoints.map { pageX(it.x) to pageY(it.y) }
         val strokes = storedStrokes.filter { stroke ->
             storedBounds[stroke.id]?.let { RectF.intersects(it, lassoBounds) } == true &&
-                (stroke.points.any { pointInPolygon(it.x * width, it.y * height, polygon) } ||
+                (stroke.points.any { pointInPolygon(pageX(it.x), pageY(it.y), polygon) } ||
                     polygon.any { (x, y) -> storedBounds[stroke.id]?.contains(x, y) == true })
         }
         val texts = storedTexts.filter { text ->
@@ -891,19 +988,24 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     private fun textBounds(value: CanvasText): RectF = RectF(
-        value.x * width,
-        value.y * height,
-        (value.x + value.boxWidth) * width,
-        value.y * height + textRenderer.height(value, width, resources.displayMetrics.density),
+        pageX(value.x),
+        pageY(value.y),
+        pageX(value.x + value.boxWidth),
+        pageY(value.y) + textRenderer.height(
+            value, pageContentRect().width().toInt(), resources.displayMetrics.density,
+        ),
     )
 
     private fun updateSelectionTransform(x: Float, y: Float) {
         val source = selectionBeforeTransform ?: return
-        val dx = (x - transformStartX) / width
-        val dy = (y - transformStartY) / height
+        val pageRect = pageContentRect()
+        val pageWidth = pageRect.width()
+        val pageHeight = pageRect.height()
+        val dx = (x - transformStartX) / pageWidth
+        val dy = (y - transformStartY) / pageHeight
         val maximumScale = min(
-            (width - transformBaseBounds.left) / transformBaseBounds.width().coerceAtLeast(1f),
-            (height - transformBaseBounds.top) / transformBaseBounds.height().coerceAtLeast(1f),
+            (pageRect.right - transformBaseBounds.left) / transformBaseBounds.width().coerceAtLeast(1f),
+            (pageRect.bottom - transformBaseBounds.top) / transformBaseBounds.height().coerceAtLeast(1f),
         ).coerceAtLeast(0.1f)
         val scale = if (selectionTransformMode == SelectionTransformMode.RESIZE) {
             val base = max(transformBaseBounds.width(), transformBaseBounds.height()).coerceAtLeast(1f)
@@ -911,13 +1013,19 @@ class DrawingCanvasView @JvmOverloads constructor(
                 .coerceIn(0.1f, maximumScale)
         } else 1f
         val translatedX = if (selectionTransformMode == SelectionTransformMode.MOVE) {
-            dx.coerceIn(-transformBaseBounds.left / width, (width - transformBaseBounds.right) / width)
+            dx.coerceIn(
+                (pageRect.left - transformBaseBounds.left) / pageWidth,
+                (pageRect.right - transformBaseBounds.right) / pageWidth,
+            )
         } else 0f
         val translatedY = if (selectionTransformMode == SelectionTransformMode.MOVE) {
-            dy.coerceIn(-transformBaseBounds.top / height, (height - transformBaseBounds.bottom) / height)
+            dy.coerceIn(
+                (pageRect.top - transformBaseBounds.top) / pageHeight,
+                (pageRect.bottom - transformBaseBounds.bottom) / pageHeight,
+            )
         } else 0f
-        val originX = transformBaseBounds.left / width
-        val originY = transformBaseBounds.top / height
+        val originX = (transformBaseBounds.left - pageRect.left) / pageWidth
+        val originY = (transformBaseBounds.top - pageRect.top) / pageHeight
         fun point(p: StrokePoint) = p.copy(
             x = originX + (p.x - originX) * scale + translatedX,
             y = originY + (p.y - originY) * scale + translatedY,
@@ -946,8 +1054,8 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun drawSelectionOverlay(canvas: Canvas) {
         if (activeSettings.tool == DrawingTool.LASSO && activePoints.size > 1 && selectionTransformMode == SelectionTransformMode.NONE) {
             val path = android.graphics.Path()
-            path.moveTo(activePoints.first().x * width, activePoints.first().y * height)
-            activePoints.drop(1).forEach { path.lineTo(it.x * width, it.y * height) }
+            path.moveTo(pageX(activePoints.first().x), pageY(activePoints.first().y))
+            activePoints.drop(1).forEach { path.lineTo(pageX(it.x), pageY(it.y)) }
             canvas.drawPath(path, selectionPaint)
         }
         if (!selectionBounds.isEmpty) {
@@ -968,8 +1076,8 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun addPoint(x: Float, y: Float, pressure: Float, eventTime: Long) {
         activePoints += StrokePoint(
-            (x / width).coerceIn(0f, 1f),
-            (y / height).coerceIn(0f, 1f),
+            normalizedPageX(x),
+            normalizedPageY(y),
             pressure,
             (eventTime - strokeStartedAt).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
         )
@@ -981,19 +1089,25 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (width <= 0 || height <= 0) return
         strokeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
             val canvas = Canvas(bitmap)
+            val pageRect = pageContentRect()
+            canvas.save()
+            canvas.translate(pageRect.left, pageRect.top)
             val elements: List<Pair<Int, Any>> = storedStrokes.map { it.strokeIndex to it as Any } +
                 storedTexts.map { it.elementIndex to it as Any }
             elements.sortedBy { it.first }.forEach { (_, element) ->
                 when (element) {
                     is Stroke -> renderer.draw(
-                        canvas, element.points, element.colorArgb, element.width, width, height,
+                        canvas, element.points, element.colorArgb, element.width,
+                        pageRect.width().toInt(), pageRect.height().toInt(),
                         resources.displayMetrics.density, element.tool,
                     )
                     is CanvasText -> textRenderer.draw(
-                        canvas, element, width, height, resources.displayMetrics.density,
+                        canvas, element, pageRect.width().toInt(), pageRect.height().toInt(),
+                        resources.displayMetrics.density,
                     )
                 }
             }
+            canvas.restore()
         }
     }
 
@@ -1027,14 +1141,28 @@ class DrawingCanvasView @JvmOverloads constructor(
             .filter { storedBounds[it.id]?.let { bounds -> RectF.intersects(bounds, currentDirty) } == true }
             .sortedBy(Stroke::strokeIndex)
             .forEach { stroke ->
+                val pageRect = pageContentRect()
+                canvas.save()
+                canvas.translate(pageRect.left, pageRect.top)
                 renderer.draw(
-                    canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
+                    canvas, stroke.points, stroke.colorArgb, stroke.width,
+                    pageRect.width().toInt(), pageRect.height().toInt(),
                     resources.displayMetrics.density, stroke.tool,
                 )
+                canvas.restore()
             }
         storedTexts.filter { RectF.intersects(textBounds(it), currentDirty) }
             .sortedBy(CanvasText::elementIndex)
-            .forEach { textRenderer.draw(canvas, it, width, height, resources.displayMetrics.density) }
+            .forEach {
+                val pageRect = pageContentRect()
+                canvas.save()
+                canvas.translate(pageRect.left, pageRect.top)
+                textRenderer.draw(
+                    canvas, it, pageRect.width().toInt(), pageRect.height().toInt(),
+                    resources.displayMetrics.density,
+                )
+                canvas.restore()
+            }
         areaPreview.filter { it.target is ErasableStroke.Persisted }
             .flatMap(AreaEraseReplacement::fragments)
             .forEach { drawStroke(canvas, it) }
@@ -1058,10 +1186,10 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (draft.points.isEmpty()) return RectF()
         val padding = areaCollisionRadius(draft, resources.displayMetrics.density) - eraserRadiusPx()
         return RectF(
-            draft.points.minOf { it.x } * width - padding,
-            draft.points.minOf { it.y } * height - padding,
-            draft.points.maxOf { it.x } * width + padding,
-            draft.points.maxOf { it.y } * height + padding,
+            pageX(draft.points.minOf { it.x }) - padding,
+            pageY(draft.points.minOf { it.y }) - padding,
+            pageX(draft.points.maxOf { it.x }) + padding,
+            pageY(draft.points.maxOf { it.y }) + padding,
         )
     }
 
@@ -1075,16 +1203,53 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun drawTemplate(canvas: Canvas) {
         canvas.drawColor(context.getColor(R.color.noteup_page))
-        pageRenderer.drawTemplate(
-            canvas, width, height, resources.displayMetrics.density, pageTemplate,
-        )
+        val background = pdfBackgroundBitmap
+        if (background == null) {
+            pageRenderer.drawTemplate(
+                canvas, width, height, resources.displayMetrics.density, pageTemplate,
+            )
+        } else {
+            canvas.drawBitmap(background, null, pageRenderer.fitCenterRect(width, height, background), null)
+        }
     }
 
     private fun drawStroke(canvas: Canvas, stroke: StrokeDraft) {
+        val pageRect = pageContentRect()
+        canvas.save()
+        canvas.translate(pageRect.left, pageRect.top)
         renderer.draw(
-            canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
+            canvas, stroke.points, stroke.colorArgb, stroke.width,
+            pageRect.width().toInt(), pageRect.height().toInt(),
             resources.displayMetrics.density, stroke.tool,
         )
+        canvas.restore()
+    }
+
+    private fun pageContentRect(): RectF {
+        val background = pdfBackgroundBitmap
+        return if (background == null || width <= 0 || height <= 0) {
+            RectF(0f, 0f, width.toFloat(), height.toFloat())
+        } else pageRenderer.fitCenterRect(width, height, background)
+    }
+
+    private fun pageX(normalized: Float): Float {
+        val rect = pageContentRect()
+        return rect.left + normalized * rect.width()
+    }
+
+    private fun pageY(normalized: Float): Float {
+        val rect = pageContentRect()
+        return rect.top + normalized * rect.height()
+    }
+
+    private fun normalizedPageX(value: Float): Float {
+        val rect = pageContentRect()
+        return ((value - rect.left) / rect.width().coerceAtLeast(1f)).coerceIn(0f, 1f)
+    }
+
+    private fun normalizedPageY(value: Float): Float {
+        val rect = pageContentRect()
+        return ((value - rect.top) / rect.height().coerceAtLeast(1f)).coerceIn(0f, 1f)
     }
 
     private fun eraserRadiusPx() = ERASER_RADIUS_DP * resources.displayMetrics.density
@@ -1136,6 +1301,9 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val MINIMUM_SCALE = 1f
         const val MAXIMUM_SCALE = 4f
         const val HANDLE_RADIUS_DP = 10f
+        const val PAGE_SWIPE_SLOP_MULTIPLIER = 4
+        const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
+        const val PAGE_SWIPE_DIRECTION_RATIO = 1.25f
     }
 
     private enum class SelectionTransformMode { NONE, MOVE, RESIZE }
@@ -1156,4 +1324,9 @@ class DrawingCanvasView @JvmOverloads constructor(
             return true
         }
     }
+}
+
+enum class PageSwipeDirection {
+    PREVIOUS,
+    NEXT,
 }

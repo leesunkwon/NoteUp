@@ -11,6 +11,8 @@ import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.data.trash.TrashCleanupService
+import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
+import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +34,8 @@ class DashboardViewModel(
     private val thumbnailStore: PageThumbnailStore,
     private val thumbnailService: PageThumbnailService,
     private val trashCleanupService: TrashCleanupService,
+    private val pdfDocumentStore: PdfDocumentStore,
+    private val pdfPageRenderStore: PdfPageRenderStore,
 ) : ViewModel() {
 
     private val filterType = savedStateHandle.getStateFlow(FILTER_TYPE_KEY, FILTER_ALL)
@@ -161,8 +165,13 @@ class DashboardViewModel(
     fun restoreNote(noteId: Long) = launchDataOperation { repository.restoreNote(noteId) }
 
     fun permanentlyDeleteNote(noteId: Long) = launchDataOperation {
-        repository.permanentlyDeleteNote(noteId).forEach { pageId ->
+        val assets = repository.permanentlyDeleteNote(noteId)
+        assets.pageIds.forEach { pageId ->
             runCatching { thumbnailService.delete(pageId) }
+        }
+        assets.pdfStorageNames.forEach { storageName ->
+            pdfPageRenderStore.evict(storageName)
+            pdfDocumentStore.delete(storageName)
         }
     }
 
@@ -194,6 +203,8 @@ class DashboardViewModel(
         private val thumbnailStore: PageThumbnailStore,
         private val thumbnailService: PageThumbnailService,
         private val trashCleanupService: TrashCleanupService,
+        private val pdfDocumentStore: PdfDocumentStore,
+        private val pdfPageRenderStore: PdfPageRenderStore,
     ) : AbstractSavedStateViewModelFactory(owner, null) {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -202,6 +213,7 @@ class DashboardViewModel(
             handle: SavedStateHandle,
         ): T = DashboardViewModel(
             repository, handle, thumbnailStore, thumbnailService, trashCleanupService,
+            pdfDocumentStore, pdfPageRenderStore,
         ) as T
     }
 

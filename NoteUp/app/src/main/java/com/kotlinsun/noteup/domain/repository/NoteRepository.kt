@@ -8,6 +8,8 @@ import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
+import com.kotlinsun.noteup.domain.model.DeletedAssets
+import com.kotlinsun.noteup.domain.model.PdfImportPage
 import kotlinx.coroutines.flow.Flow
 
 interface NoteRepository {
@@ -30,11 +32,18 @@ interface NoteRepository {
     suspend fun moveNote(noteId: Long, notebookId: Long?)
     suspend fun moveNoteToTrash(noteId: Long)
     suspend fun restoreNote(noteId: Long)
-    suspend fun permanentlyDeleteNote(noteId: Long): List<Long>
-    suspend fun purgeExpiredNotes(cutoff: Long): List<Long>
+    suspend fun permanentlyDeleteNote(noteId: Long): DeletedAssets
+    suspend fun purgeExpiredNotes(cutoff: Long): DeletedAssets
+    suspend fun createImportedPdfNote(
+        title: String,
+        storageName: String,
+        displayName: String,
+        pages: List<PdfImportPage>,
+    ): Long
+    suspend fun getReferencedPdfStorageNames(): Set<String>
     suspend fun createPage(noteId: Long, template: PageTemplate): Long
     suspend fun updatePageTemplate(pageId: Long, template: PageTemplate)
-    suspend fun deletePage(noteId: Long, pageId: Long)
+    suspend fun deletePage(noteId: Long, pageId: Long): DeletedAssets
     suspend fun reorderPages(noteId: Long, orderedPageIds: List<Long>)
     suspend fun getPage(pageId: Long): Page?
     suspend fun getPages(noteId: Long): List<Page>

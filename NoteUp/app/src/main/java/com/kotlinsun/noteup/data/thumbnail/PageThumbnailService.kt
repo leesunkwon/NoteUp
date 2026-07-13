@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.rendering.PageRenderer
+import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 class PageThumbnailService(
     private val repository: NoteRepository,
     private val store: PageThumbnailStore,
+    private val pdfRenderStore: PdfPageRenderStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val requests = Channel<Long>(Channel.UNLIMITED)
@@ -48,8 +50,10 @@ class PageThumbnailService(
         val strokes = repository.getStrokes(pageId)
         val texts = repository.getTexts(pageId)
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val pdfBitmap = page.pdfBackground?.let { pdfRenderStore.render(it, WIDTH * 2) }
         renderer.draw(
             Canvas(bitmap), WIDTH, HEIGHT, THUMBNAIL_DENSITY, page.templateType, strokes, texts,
+            pdfBitmap,
         )
         store.write(pageId, bitmap)
     }
