@@ -1,11 +1,16 @@
 package com.kotlinsun.noteup.ui.canvas
 
+import android.app.Activity
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
+import androidx.core.content.FileProvider
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -36,6 +41,9 @@ import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.TextSize
+import com.kotlinsun.noteup.domain.model.ExportArtifact
+import com.kotlinsun.noteup.domain.model.ExportFormat
+import com.kotlinsun.noteup.domain.model.ExportUiState
 import kotlinx.coroutines.launch
 
 class CanvasFragment : Fragment() {
@@ -46,6 +54,22 @@ class CanvasFragment : Fragment() {
     private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
+    private var presentedArtifactPath: String? = null
+    private var savingArtifact = false
+    private val createDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null) {
+            savingArtifact = true
+            viewModel.saveExport(uri)
+        } else {
+            (viewModel.exportState.value as? ExportUiState.Ready)?.artifact?.let {
+                presentedArtifactPath = null
+                showExportResultDialog(it)
+            }
+        }
+    }
     private val pageAdapter by lazy {
         val store = (requireActivity().application as NoteUpApplication).container.pageThumbnailStore
         PageThumbnailAdapter(store, viewModel::selectPage, ::confirmPageDeletion, viewModel::reorderPages)
@@ -62,6 +86,7 @@ class CanvasFragment : Fragment() {
             container.drawingToolSettingsStore,
             container.pageThumbnailStore,
             container.pageThumbnailService,
+            container.noteExportService,
         )
     }
 
@@ -92,7 +117,7 @@ class CanvasFragment : Fragment() {
     private fun setupToolbar() = with(binding) {
         listOf(
             penToolButton, highlighterToolButton, eraserToolButton, lassoToolButton,
-            lineToolButton, rectangleToolButton, circleToolButton, textToolButton,
+            shapeToolButton, textToolButton,
             thinButton, mediumButton, thickButton,
             strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
@@ -100,10 +125,9 @@ class CanvasFragment : Fragment() {
         highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
         lassoToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.LASSO) }
-        lineToolButton.setOnClickListener { selectDrawingTool(DrawingTool.LINE) }
-        rectangleToolButton.setOnClickListener { selectDrawingTool(DrawingTool.RECTANGLE) }
-        circleToolButton.setOnClickListener { selectDrawingTool(DrawingTool.CIRCLE) }
+        shapeToolButton.setOnClickListener { showShapeMenu() }
         textToolButton.setOnClickListener { selectDrawingTool(DrawingTool.TEXT) }
+        moreButton.setOnClickListener { showMoreMenu() }
         copySelectionButton.setOnClickListener { viewModel.copySelection() }
         pasteSelectionButton.setOnClickListener {
             val offset = PASTE_OFFSET_DP * resources.displayMetrics.density
@@ -170,6 +194,7 @@ class CanvasFragment : Fragment() {
                     }
                 }
                 launch { viewModel.events.collect(::handleEvent) }
+                launch { viewModel.exportState.collect(::renderExportState) }
             }
         }
     }
@@ -180,12 +205,21 @@ class CanvasFragment : Fragment() {
         notFoundState.isVisible = state == CanvasUiState.NotFound
         if (state is CanvasUiState.Ready) {
             noteTitle.text = state.note.title
-            saveStatus.text = getString(if (state.isSaving) R.string.saving else R.string.saved)
+            saveStatus.text = when {
+                state.isExporting -> getString(
+                    R.string.export_progress,
+                    state.exportCompletedPages,
+                    state.exportTotalPages,
+                )
+                state.isSaving -> getString(R.string.saving)
+                else -> getString(R.string.saved)
+            }
             undoButton.isEnabled = state.canUndo
             redoButton.isEnabled = state.canRedo
             previousPageButton.isEnabled = !state.isBusy && state.pagePosition > 0
             nextPageButton.isEnabled = !state.isBusy && state.pagePosition < state.pages.lastIndex
             addPageButton.isEnabled = !state.isBusy
+            moreButton.isEnabled = !state.isBusy
             pageIndicator.text = getString(
                 R.string.page_indicator,
                 state.pagePosition + 1,
@@ -214,18 +248,9 @@ class CanvasFragment : Fragment() {
                 }
                 drawingCanvas.setViewport(state.viewport)
             }
-            copySelectionButton.isVisible = state.hasSelection
-            deleteSelectionButton.isVisible = state.hasSelection
-            pasteSelectionButton.isVisible = state.canPaste
-            copySelectionButton.isEnabled = !state.isBusy
-            pasteSelectionButton.isEnabled = !state.isBusy
-            deleteSelectionButton.isEnabled = !state.isBusy
-            editTextButton.isEnabled = !state.isBusy
             if (drawingCanvas.currentSelection() != state.selection) {
                 drawingCanvas.syncSelection(state.selection)
             }
-            editTextButton.isVisible = drawingCanvas.currentSelection().texts.size == 1 &&
-                drawingCanvas.currentSelection().strokes.isEmpty()
         } else {
             noteTitle.text = getString(R.string.canvas_title)
             saveStatus.text = null
@@ -234,29 +259,151 @@ class CanvasFragment : Fragment() {
             previousPageButton.isEnabled = false
             nextPageButton.isEnabled = false
             addPageButton.isEnabled = false
+            moreButton.isEnabled = false
             pageIndicator.text = null
         }
+        renderToolbarState()
         updateInputEnabled()
+    }
+
+    private fun showShapeMenu() {
+        PopupMenu(requireContext(), binding.shapeToolButton).apply {
+            menu.add(0, SHAPE_LINE_ID, 0, R.string.line_tool)
+            menu.add(0, SHAPE_RECTANGLE_ID, 1, R.string.rectangle_tool)
+            menu.add(0, SHAPE_CIRCLE_ID, 2, R.string.circle_tool)
+            setOnMenuItemClickListener { item ->
+                val tool = when (item.itemId) {
+                    SHAPE_LINE_ID -> DrawingTool.LINE
+                    SHAPE_RECTANGLE_ID -> DrawingTool.RECTANGLE
+                    SHAPE_CIRCLE_ID -> DrawingTool.CIRCLE
+                    else -> return@setOnMenuItemClickListener false
+                }
+                selectDrawingTool(tool)
+                true
+            }
+            show()
+        }
+    }
+
+    private fun showMoreMenu() {
+        val state = currentState as? CanvasUiState.Ready
+        PopupMenu(requireContext(), binding.moreButton).apply {
+            menu.add(0, MORE_EXPORT_ID, 0, R.string.export).isEnabled = state != null && !state.isBusy
+            setOnMenuItemClickListener { item ->
+                if (item.itemId != MORE_EXPORT_ID) return@setOnMenuItemClickListener false
+                showExportFormatDialog()
+                true
+            }
+            show()
+        }
+    }
+
+    private fun showExportFormatDialog() {
+        val labels = arrayOf(
+            getString(R.string.export_current_png),
+            getString(R.string.export_current_webp),
+            getString(R.string.export_note_pdf),
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.export)
+            .setItems(labels) { _, index ->
+                when (index) {
+                    0 -> viewModel.exportCurrentPage(ExportFormat.PNG)
+                    1 -> viewModel.exportCurrentPage(ExportFormat.WEBP)
+                    else -> viewModel.exportNotePdf()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun renderExportState(state: ExportUiState) {
+        when (state) {
+            ExportUiState.Idle, is ExportUiState.Rendering -> Unit
+            is ExportUiState.Saving -> Unit
+            is ExportUiState.Ready -> {
+                if (savingArtifact) {
+                    savingArtifact = false
+                    Snackbar.make(binding.root, R.string.export_saved, Snackbar.LENGTH_SHORT).show()
+                    viewModel.clearExportResult()
+                } else if (presentedArtifactPath != state.artifact.file.absolutePath) {
+                    presentedArtifactPath = state.artifact.file.absolutePath
+                    showExportResultDialog(state.artifact)
+                }
+            }
+            is ExportUiState.Error -> {
+                savingArtifact = false
+                presentedArtifactPath = null
+                Snackbar.make(binding.root, R.string.export_failed, Snackbar.LENGTH_SHORT).show()
+                viewModel.clearExportResult()
+            }
+        }
+    }
+
+    private fun showExportResultDialog(artifact: ExportArtifact) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.export_complete)
+            .setMessage(artifact.displayName)
+            .setPositiveButton(R.string.share) { _, _ -> shareArtifact(artifact) }
+            .setNeutralButton(R.string.save_elsewhere) { _, _ -> launchCreateDocument(artifact) }
+            .setNegativeButton(R.string.close) { _, _ -> viewModel.clearExportResult() }
+            .setOnCancelListener { viewModel.clearExportResult() }
+            .show()
+    }
+
+    private fun shareArtifact(artifact: ExportArtifact) {
+        val uri = FileProvider.getUriForFile(
+            requireContext(), "${requireContext().packageName}.fileprovider", artifact.file,
+        )
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = artifact.mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = android.content.ClipData.newRawUri(artifact.displayName, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_export)))
+        viewModel.clearExportResult()
+    }
+
+    private fun launchCreateDocument(artifact: ExportArtifact) {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = artifact.mimeType
+            putExtra(Intent.EXTRA_TITLE, artifact.displayName)
+        }
+        createDocumentLauncher.launch(intent)
     }
 
     private fun renderSettings(settings: DrawingSettings) = with(binding) {
         currentSettings = settings
         drawingCanvas.drawingSettings = settings
+        renderToolbarState()
+        updateInputEnabled()
+    }
+
+    private fun renderToolbarState() = with(binding) {
+        val settings = currentSettings
         penToolButton.isChecked = settings.tool == DrawingTool.PEN
         highlighterToolButton.isChecked = settings.tool == DrawingTool.HIGHLIGHTER
         eraserToolButton.isChecked = settings.tool == DrawingTool.ERASER
         lassoToolButton.isChecked = settings.tool == DrawingTool.LASSO
-        lineToolButton.isChecked = settings.tool == DrawingTool.LINE
-        rectangleToolButton.isChecked = settings.tool == DrawingTool.RECTANGLE
-        circleToolButton.isChecked = settings.tool == DrawingTool.CIRCLE
+        shapeToolButton.isChecked = settings.tool in SHAPE_TOOLS
         textToolButton.isChecked = settings.tool == DrawingTool.TEXT
+        shapeToolButton.setText(
+            when (settings.tool) {
+                DrawingTool.LINE -> R.string.line_tool
+                DrawingTool.RECTANGLE -> R.string.rectangle_tool
+                DrawingTool.CIRCLE -> R.string.circle_tool
+                else -> R.string.shape_tool
+            },
+        )
         penToolButton.alpha = selectionAlpha(penToolButton.isChecked)
         highlighterToolButton.alpha = selectionAlpha(highlighterToolButton.isChecked)
         eraserToolButton.alpha = selectionAlpha(eraserToolButton.isChecked)
-        listOf(lassoToolButton, lineToolButton, rectangleToolButton, circleToolButton, textToolButton)
+        listOf(lassoToolButton, shapeToolButton, textToolButton)
             .forEach { it.alpha = selectionAlpha(it.isChecked) }
 
-        val showSettings = settings.tool !in setOf(DrawingTool.ERASER, DrawingTool.LASSO)
+        val showSettings = settings.tool in DRAWING_OPTION_TOOLS
         colorButtons().forEach { it.isVisible = showSettings }
         thicknessButtons().forEach { it.isVisible = showSettings }
         strokeEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
@@ -266,7 +413,21 @@ class CanvasFragment : Fragment() {
         strokeEraserModeButton.alpha = selectionAlpha(strokeEraserModeButton.isChecked)
         areaEraserModeButton.alpha = selectionAlpha(areaEraserModeButton.isChecked)
         if (showSettings) renderColorAndThickness(settings)
-        updateInputEnabled()
+
+        val state = currentState as? CanvasUiState.Ready
+        val isLasso = settings.tool == DrawingTool.LASSO
+        val hasSelection = state?.hasSelection == true
+        val canPaste = state?.canPaste == true
+        val isBusy = state?.isBusy != false
+        lassoHint.isVisible = isLasso && !hasSelection
+        copySelectionButton.isVisible = isLasso && hasSelection
+        deleteSelectionButton.isVisible = isLasso && hasSelection
+        pasteSelectionButton.isVisible = isLasso && canPaste
+        editTextButton.isVisible = isLasso && hasSelection &&
+            drawingCanvas.currentSelection().texts.size == 1 &&
+            drawingCanvas.currentSelection().strokes.isEmpty()
+        listOf(copySelectionButton, pasteSelectionButton, deleteSelectionButton, editTextButton)
+            .forEach { it.isEnabled = !isBusy }
     }
 
     private fun renderColorAndThickness(settings: DrawingSettings) {
@@ -445,6 +606,7 @@ class CanvasFragment : Fragment() {
     private fun updateInputEnabled() {
         val state = currentState as? CanvasUiState.Ready
         binding.drawingCanvas.isInputEnabled = state != null && !state.isPageChanging &&
+            !state.isExporting &&
             !(state.isBusy && currentSettings.tool in setOf(
                 DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
             ))
@@ -486,5 +648,18 @@ class CanvasFragment : Fragment() {
         const val INVALID_NOTE_ID = -1L
         const val DEFAULT_TEXT_WIDTH = 0.35f
         const val PASTE_OFFSET_DP = 24f
+        const val SHAPE_LINE_ID = 1
+        const val SHAPE_RECTANGLE_ID = 2
+        const val SHAPE_CIRCLE_ID = 3
+        const val MORE_EXPORT_ID = 10
+        val SHAPE_TOOLS = setOf(DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE)
+        val DRAWING_OPTION_TOOLS = setOf(
+            DrawingTool.PEN,
+            DrawingTool.HIGHLIGHTER,
+            DrawingTool.LINE,
+            DrawingTool.RECTANGLE,
+            DrawingTool.CIRCLE,
+            DrawingTool.TEXT,
+        )
     }
 }

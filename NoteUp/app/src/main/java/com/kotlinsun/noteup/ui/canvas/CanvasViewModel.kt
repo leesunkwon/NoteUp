@@ -3,7 +3,9 @@ package com.kotlinsun.noteup.ui.canvas
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
+import com.kotlinsun.noteup.data.export.NoteExportService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.domain.model.DrawingSettings
@@ -20,6 +22,9 @@ import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.TextSize
+import com.kotlinsun.noteup.domain.model.ExportFormat
+import com.kotlinsun.noteup.domain.model.ExportUiState
+import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
@@ -51,6 +56,7 @@ class CanvasViewModel(
     private val settingsStore: DrawingToolSettingsStore,
     private val thumbnailStore: PageThumbnailStore,
     private val thumbnailService: PageThumbnailService,
+    private val exportService: NoteExportService,
 ) : ViewModel() {
 
     private val operationQueue = Channel<CanvasOperation>(Channel.UNLIMITED)
@@ -67,6 +73,8 @@ class CanvasViewModel(
     private val viewportState = MutableStateFlow<Map<Long, CanvasViewport>>(emptyMap())
     private val selectionState = MutableStateFlow(CanvasSelection())
     private val clipboardState = MutableStateFlow(CanvasSelection())
+    private val _exportState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
+    val exportState = _exportState.asStateFlow()
     private val _settings = MutableStateFlow(settingsStore.load())
     val settings = _settings.asStateFlow()
     private val _errors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -124,11 +132,19 @@ class CanvasViewModel(
         } else state
     }
 
-    val uiState = combine(baseUiState, selectionState, clipboardState) { state, selection, clipboard ->
+    val uiState = combine(
+        baseUiState, selectionState, clipboardState, exportState,
+    ) { state, selection, clipboard, export ->
+        val progress = export as? ExportUiState.Rendering
+        val exportBusy = progress != null || export is ExportUiState.Saving
         if (state is CanvasUiState.Ready) state.copy(
             hasSelection = !selection.isEmpty,
             canPaste = !clipboard.isEmpty,
             selection = selection,
+            isBusy = state.isBusy || exportBusy,
+            isExporting = progress != null,
+            exportCompletedPages = progress?.completedPages ?: 0,
+            exportTotalPages = progress?.totalPages ?: 0,
         ) else state
     }.stateIn(
         scope = viewModelScope,
@@ -197,6 +213,36 @@ class CanvasViewModel(
     fun addText(draft: CanvasTextDraft) {
         val pageId = (uiState.value as? CanvasUiState.Ready)?.page?.id ?: return
         if (draft.content.isNotBlank()) enqueue(CanvasOperation.AddText(draft, pageId))
+    }
+
+    fun exportCurrentPage(format: ExportFormat) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0 || exportState.value is ExportUiState.Rendering) return
+        _exportState.value = ExportUiState.Rendering(0, 1)
+        enqueue(
+            CanvasOperation.ExportPage(
+                state.note, state.page.id, state.pagePosition + 1, format,
+            ),
+        )
+    }
+
+    fun exportNotePdf() {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0 || exportState.value is ExportUiState.Rendering) return
+        _exportState.value = ExportUiState.Rendering(0, state.pages.size)
+        enqueue(CanvasOperation.ExportPdf(state.note))
+    }
+
+    fun clearExportResult() { _exportState.value = ExportUiState.Idle }
+
+    fun saveExport(uri: Uri) {
+        val artifact = (exportState.value as? ExportUiState.Ready)?.artifact ?: return
+        _exportState.value = ExportUiState.Saving(artifact)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { exportService.copyTo(artifact, uri) }
+                .onSuccess { _exportState.value = ExportUiState.Ready(artifact) }
+                .onFailure { _exportState.value = ExportUiState.Error(it.message) }
+        }
     }
 
     fun updateSelection(value: CanvasSelection) { selectionState.value = value }
@@ -342,6 +388,8 @@ class CanvasViewModel(
                 is CanvasOperation.PasteSelection -> processPasteSelection(
                     operation.source, operation.pageId, operation.offsetX, operation.offsetY,
                 )
+                is CanvasOperation.ExportPage -> processExportPage(operation)
+                is CanvasOperation.ExportPdf -> processExportPdf(operation.note)
                 is CanvasOperation.CreatePage -> processCreatePage(operation.template)
                 is CanvasOperation.DeletePage -> processDeletePage(operation.pageId, operation.nextPageId)
                 is CanvasOperation.ReorderPages -> repository.reorderPages(noteId, operation.pageIds)
@@ -350,9 +398,25 @@ class CanvasViewModel(
             }
         }.onFailure {
             rollbackVisualState(operation)
-            _errors.tryEmit(Unit)
-            _events.tryEmit(CanvasEvent.RefreshStrokes)
+            if (operation !is CanvasOperation.ExportPage && operation !is CanvasOperation.ExportPdf) {
+                _errors.tryEmit(Unit)
+                _events.tryEmit(CanvasEvent.RefreshStrokes)
+            }
         }
+    }
+
+    private suspend fun processExportPage(operation: CanvasOperation.ExportPage) {
+        val artifact = exportService.exportPage(
+            operation.note, operation.pageId, operation.pageNumber, operation.format,
+        ) { completed, total -> _exportState.value = ExportUiState.Rendering(completed, total) }
+        _exportState.value = ExportUiState.Ready(artifact)
+    }
+
+    private suspend fun processExportPdf(note: Note) {
+        val artifact = exportService.exportNotePdf(note) { completed, total ->
+            _exportState.value = ExportUiState.Rendering(completed, total)
+        }
+        _exportState.value = ExportUiState.Ready(artifact)
     }
 
     private suspend fun processAddText(draft: CanvasTextDraft, pageId: Long) {
@@ -604,6 +668,9 @@ class CanvasViewModel(
             is CanvasOperation.TransformSelection -> selectionState.value = operation.change.before
             is CanvasOperation.DeleteSelection -> selectionState.value = operation.selection
             is CanvasOperation.PasteSelection -> selectionState.value = CanvasSelection()
+            is CanvasOperation.ExportPage, is CanvasOperation.ExportPdf -> {
+                _exportState.value = ExportUiState.Error()
+            }
             is CanvasOperation.CreatePage -> Unit
             is CanvasOperation.DeletePage -> Unit
             is CanvasOperation.ReorderPages -> Unit
@@ -698,6 +765,13 @@ class CanvasViewModel(
             val offsetX: Float,
             val offsetY: Float,
         ) : CanvasOperation
+        data class ExportPage(
+            val note: Note,
+            val pageId: Long,
+            val pageNumber: Int,
+            val format: ExportFormat,
+        ) : CanvasOperation
+        data class ExportPdf(val note: Note) : CanvasOperation
         sealed interface PageOperation : CanvasOperation
         data class CreatePage(val template: PageTemplate) : PageOperation
         data class DeletePage(val pageId: Long, val nextPageId: Long?) : PageOperation
@@ -726,11 +800,12 @@ class CanvasViewModel(
         private val settingsStore: DrawingToolSettingsStore,
         private val thumbnailStore: PageThumbnailStore,
         private val thumbnailService: PageThumbnailService,
+        private val exportService: NoteExportService,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             CanvasViewModel(
-                noteId, repository, settingsStore, thumbnailStore, thumbnailService,
+                noteId, repository, settingsStore, thumbnailStore, thumbnailService, exportService,
             ) as T
     }
 }
