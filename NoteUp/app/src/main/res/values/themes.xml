@@ -8,9 +8,9 @@
         <item name="colorSurfaceVariant">@color/noteup_soft_cloud</item>
         <item name="colorOnSurfaceVariant">@color/noteup_charcoal</item>
         <item name="colorOutline">@color/noteup_hairline</item>
-        <item name="colorInverseSurface">@color/noteup_ink</item>
-        <item name="colorInverseOnSurface">@color/noteup_canvas</item>
-        <item name="colorInversePrimary">@color/noteup_canvas</item>
+        <item name="colorSurfaceInverse">@color/noteup_ink</item>
+        <item name="colorOnSurfaceInverse">@color/noteup_canvas</item>
+        <item name="colorPrimaryInverse">@color/noteup_canvas</item>
         <item name="android:colorBackground">@color/noteup_background</item>
         <item name="android:fontFamily">sans</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.NoteUp.MaterialAlertDialog</item>
