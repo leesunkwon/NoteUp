@@ -11,6 +11,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
@@ -40,9 +41,17 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onAreaErased: ((List<AreaEraseReplacement>) -> Unit)? = null
     var onViewportChanged: ((CanvasViewport) -> Unit)? = null
     var onTextRequested: ((Float, Float) -> Unit)? = null
+    var onTextEditRequested: ((CanvasText) -> Unit)? = null
     var onSelectionChanged: ((CanvasSelection) -> Unit)? = null
     var onSelectionTransformed: ((SelectionChange) -> Unit)? = null
     var drawingSettings: DrawingSettings = DrawingSettings()
+        set(value) {
+            if (field.tool == DrawingTool.TEXT && value.tool != DrawingTool.TEXT) {
+                cancelTextInput(restorePreview = true)
+                lastTextTapId = null
+            }
+            field = value
+        }
 
     private val renderer = StrokeRenderer()
     private val textRenderer = CanvasTextRenderer()
@@ -53,6 +62,8 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
     private val pageRenderer = PageRenderer(renderer)
     private val scaleDetector = ScaleGestureDetector(context, ScaleListener())
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat()
     private val storedStrokes = mutableListOf<Stroke>()
     private val storedTexts = mutableListOf<CanvasText>()
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
@@ -87,6 +98,17 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var transformStartX = 0f
     private var transformStartY = 0f
     private val transformBaseBounds = RectF()
+    private var textPointerId = MotionEvent.INVALID_POINTER_ID
+    private var textTouchTarget: CanvasText? = null
+    private var textTouchDownScreenX = 0f
+    private var textTouchDownScreenY = 0f
+    private var textTouchDownContentX = 0f
+    private var textTouchDownContentY = 0f
+    private var textTouchMoved = false
+    private var lastTextTapId: Long? = null
+    private var lastTextTapAt = 0L
+    private var lastTextTapX = 0f
+    private var lastTextTapY = 0f
 
     fun setTexts(texts: List<CanvasText>) {
         storedTexts.clear()
@@ -125,6 +147,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     ) {
         if (currentPageId != pageId) {
             cancelActiveStroke()
+            lastTextTapId = null
             pendingStrokes.clear()
             erasedInGesture.clear()
             eraserPath.clear()
@@ -143,6 +166,30 @@ class DrawingCanvasView @JvmOverloads constructor(
         viewport = remapped
         if (notify || remapped != value) onViewportChanged?.invoke(viewport)
         invalidate()
+    }
+
+    fun adjustZoom(delta: Float) {
+        if (width <= 0 || height <= 0) return
+        val oldScale = viewport.scale
+        val newScale = (oldScale + delta).coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
+        if (newScale == oldScale) return
+        val ratio = newScale / oldScale
+        val focusX = width / 2f
+        val focusY = height / 2f
+        updateViewport(
+            CanvasViewport(
+                scale = newScale,
+                offsetX = focusX - (focusX - viewport.offsetX) * ratio,
+                offsetY = focusY - (focusY - viewport.offsetY) * ratio,
+                referenceWidth = width,
+                referenceHeight = height,
+            ),
+        )
+    }
+
+    fun resetZoom() {
+        if (viewport == CanvasViewport()) return
+        updateViewport(CanvasViewport())
     }
 
     fun setStrokes(strokes: List<Stroke>) {
@@ -190,6 +237,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     fun cancelActiveStroke() {
+        cancelTextInput(restorePreview = true)
         if (activePointerId == MotionEvent.INVALID_POINTER_ID) return
         val dirtyBounds = RectF(activeBounds)
         if (activeSettings.tool == DrawingTool.ERASER) {
@@ -255,6 +303,7 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isInputEnabled) return false
+        if (drawingSettings.tool == DrawingTool.TEXT) return handleTextToolEvent(event)
         if (activePointerId == MotionEvent.INVALID_POINTER_ID && !containsStylus(event)) {
             return handleTouchGesture(event)
         }
@@ -296,14 +345,6 @@ class DrawingCanvasView @JvmOverloads constructor(
         activeBounds.set(screenX, screenY, screenX, screenY)
         val contentX = toContentX(screenX)
         val contentY = toContentY(screenY)
-        if (activeSettings.tool == DrawingTool.TEXT) {
-            onTextRequested?.invoke(
-                (contentX / width).coerceIn(0f, 1f),
-                (contentY / height).coerceIn(0f, 1f),
-            )
-            resetActiveInput()
-            return true
-        }
         if (activeSettings.tool == DrawingTool.LASSO && !selection.isEmpty) {
             val handleRadius = HANDLE_RADIUS_DP * resources.displayMetrics.density
             selectionTransformMode = when {
@@ -453,8 +494,147 @@ class DrawingCanvasView @JvmOverloads constructor(
         }
     }
 
-    private fun handleTouchGesture(event: MotionEvent): Boolean {
+    private fun handleTextToolEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount >= 2) {
+            cancelTextInput(restorePreview = true)
+            return handleTouchGesture(event, dispatchScaleEvent = false)
+        }
+        if (isTouchGestureActive || event.pointerCount >= 2) {
+            return handleTouchGesture(event, dispatchScaleEvent = false)
+        }
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> startTextInput(event)
+            MotionEvent.ACTION_MOVE -> continueTextInput(event)
+            MotionEvent.ACTION_UP -> finishTextInput(event)
+            MotionEvent.ACTION_CANCEL -> {
+                cancelTextInput(restorePreview = true)
+                true
+            }
+            else -> true
+        }
+    }
+
+    private fun startTextInput(event: MotionEvent): Boolean {
+        if (width == 0 || height == 0) return false
+        val actionIndex = event.actionIndex
+        val toolType = event.getToolType(actionIndex)
+        if (toolType != MotionEvent.TOOL_TYPE_FINGER && toolType != MotionEvent.TOOL_TYPE_STYLUS) {
+            return false
+        }
+        textPointerId = event.getPointerId(actionIndex)
+        textTouchDownScreenX = event.getX(actionIndex)
+        textTouchDownScreenY = event.getY(actionIndex)
+        textTouchDownContentX = toContentX(textTouchDownScreenX)
+        textTouchDownContentY = toContentY(textTouchDownScreenY)
+        textTouchMoved = false
+        textTouchTarget = findTopTextAt(textTouchDownContentX, textTouchDownContentY)
+        textTouchTarget?.let { target ->
+            selectElements(CanvasSelection(texts = listOf(target)))
+            selectionBeforeTransform = selection
+            transformBaseBounds.set(selectionBounds)
+            transformStartX = textTouchDownContentX
+            transformStartY = textTouchDownContentY
+        }
+        parent?.requestDisallowInterceptTouchEvent(true)
+        return true
+    }
+
+    private fun continueTextInput(event: MotionEvent): Boolean {
+        val pointerIndex = event.findPointerIndex(textPointerId)
+        if (pointerIndex < 0) return true
+        val screenX = event.getX(pointerIndex)
+        val screenY = event.getY(pointerIndex)
+        if (!textTouchMoved && distance(
+                screenX, screenY, textTouchDownScreenX, textTouchDownScreenY,
+            ) >= touchSlop
+        ) {
+            textTouchMoved = true
+            lastTextTapId = null
+            if (textTouchTarget != null) selectionTransformMode = SelectionTransformMode.MOVE
+        }
+        if (textTouchMoved && selectionTransformMode == SelectionTransformMode.MOVE) {
+            updateSelectionTransform(toContentX(screenX), toContentY(screenY))
+        }
+        return true
+    }
+
+    private fun finishTextInput(event: MotionEvent): Boolean {
+        val pointerIndex = event.findPointerIndex(textPointerId)
+        if (pointerIndex < 0) {
+            cancelTextInput(restorePreview = true)
+            return true
+        }
+        val screenX = event.getX(pointerIndex)
+        val screenY = event.getY(pointerIndex)
+        val target = textTouchTarget
+        if (textTouchMoved && selectionTransformMode == SelectionTransformMode.MOVE) {
+            updateSelectionTransform(toContentX(screenX), toContentY(screenY))
+            val before = selectionBeforeTransform
+            if (before != null && before != selection) {
+                onSelectionTransformed?.invoke(SelectionChange(before, selection))
+            }
+        } else if (!textTouchMoved && target != null) {
+            val isDoubleTap = lastTextTapId == target.id &&
+                event.eventTime - lastTextTapAt in 1L..ViewConfiguration.getDoubleTapTimeout().toLong() &&
+                distance(screenX, screenY, lastTextTapX, lastTextTapY) <= doubleTapSlop
+            if (isDoubleTap) {
+                lastTextTapId = null
+                storedTexts.firstOrNull { it.id == target.id }?.let { onTextEditRequested?.invoke(it) }
+            } else {
+                lastTextTapId = target.id
+                lastTextTapAt = event.eventTime
+                lastTextTapX = screenX
+                lastTextTapY = screenY
+            }
+        } else if (!textTouchMoved) {
+            lastTextTapId = null
+            clearSelection()
+            onTextRequested?.invoke(
+                (toContentX(screenX) / width).coerceIn(0f, 1f),
+                (toContentY(screenY) / height).coerceIn(0f, 1f),
+            )
+        }
+        resetTextInput()
+        return true
+    }
+
+    private fun cancelTextInput(restorePreview: Boolean) {
+        if (textPointerId == MotionEvent.INVALID_POINTER_ID) return
+        if (restorePreview && textTouchMoved) {
+            selectionBeforeTransform?.let(::restoreSelectionPreview)
+        }
+        lastTextTapId = null
+        resetTextInput()
+    }
+
+    private fun resetTextInput() {
+        textPointerId = MotionEvent.INVALID_POINTER_ID
+        textTouchTarget = null
+        textTouchMoved = false
+        selectionBeforeTransform = null
+        selectionTransformMode = SelectionTransformMode.NONE
+        parent?.requestDisallowInterceptTouchEvent(false)
+    }
+
+    private fun restoreSelectionPreview(value: CanvasSelection) {
+        value.texts.forEach { original ->
+            val index = storedTexts.indexOfFirst { it.id == original.id }
+            if (index >= 0) storedTexts[index] = original
+        }
+        selection = value
+        updateSelectionBounds()
+        rebuildStrokeBitmap()
+        invalidate()
+    }
+
+    private fun findTopTextAt(x: Float, y: Float): CanvasText? = storedTexts
+        .asSequence()
+        .filter { textBounds(it).contains(x, y) }
+        .maxByOrNull(CanvasText::elementIndex)
+
+    private fun handleTouchGesture(event: MotionEvent, dispatchScaleEvent: Boolean = true): Boolean {
+        if (dispatchScaleEvent) scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN -> if (event.pointerCount >= 2) {
                 val (focusX, focusY) = gestureFocus(event)

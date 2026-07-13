@@ -47,6 +47,7 @@ import com.kotlinsun.noteup.domain.model.ExportArtifact
 import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class CanvasFragment : Fragment() {
     private var _binding: FragmentCanvasBinding? = null
@@ -109,8 +110,12 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokeCompleted = viewModel::addStroke
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
         binding.drawingCanvas.onAreaErased = viewModel::eraseArea
-        binding.drawingCanvas.onViewportChanged = viewModel::updateViewport
+        binding.drawingCanvas.onViewportChanged = { viewport ->
+            viewModel.updateViewport(viewport)
+            renderZoomControls(viewport.scale)
+        }
         binding.drawingCanvas.onTextRequested = ::showNewTextDialog
+        binding.drawingCanvas.onTextEditRequested = ::showEditTextDialog
         binding.drawingCanvas.onSelectionChanged = viewModel::updateSelection
         binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
         setupToolbar()
@@ -127,6 +132,8 @@ class CanvasFragment : Fragment() {
             strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
         configureToolbarAccessibility()
+        TooltipCompat.setTooltipText(zoomOutButton, getString(R.string.zoom_out))
+        TooltipCompat.setTooltipText(zoomInButton, getString(R.string.zoom_in))
         penToolButton.setOnClickListener { selectDrawingTool(DrawingTool.PEN) }
         highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
@@ -163,6 +170,9 @@ class CanvasFragment : Fragment() {
         previousPageButton.setOnClickListener { viewModel.selectPreviousPage() }
         nextPageButton.setOnClickListener { viewModel.selectNextPage() }
         addPageButton.setOnClickListener { showPageTemplateDialog() }
+        zoomOutButton.setOnClickListener { drawingCanvas.adjustZoom(-ZOOM_STEP) }
+        zoomResetButton.setOnClickListener { drawingCanvas.resetZoom() }
+        zoomInButton.setOnClickListener { drawingCanvas.adjustZoom(ZOOM_STEP) }
         pageListButton.setOnClickListener {
             pagePanelOpen = !pagePanel.isVisible
             pagePanel.isVisible = pagePanelOpen
@@ -302,6 +312,10 @@ class CanvasFragment : Fragment() {
             if (drawingCanvas.currentSelection() != state.selection) {
                 drawingCanvas.syncSelection(state.selection)
             }
+            renderZoomControls(
+                state.viewport.scale,
+                controlsEnabled = !state.isPageChanging && !state.isExporting,
+            )
         } else {
             noteTitle.text = getString(R.string.canvas_title)
             saveStatus.text = null
@@ -312,9 +326,26 @@ class CanvasFragment : Fragment() {
             addPageButton.isEnabled = false
             moreButton.isEnabled = false
             pageIndicator.text = null
+            renderZoomControls(MIN_ZOOM, controlsEnabled = false)
         }
         renderToolbarState()
         updateInputEnabled()
+    }
+
+    private fun renderZoomControls(
+        scale: Float,
+        controlsEnabled: Boolean = (currentState as? CanvasUiState.Ready)?.let {
+            !it.isPageChanging && !it.isExporting
+        } == true,
+    ) = with(binding) {
+        val clampedScale = scale.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        zoomPercentage.text = getString(
+            R.string.zoom_percentage,
+            (clampedScale * 100f).roundToInt(),
+        )
+        zoomOutButton.isEnabled = controlsEnabled && clampedScale > MIN_ZOOM + ZOOM_EPSILON
+        zoomResetButton.isEnabled = controlsEnabled && clampedScale > MIN_ZOOM + ZOOM_EPSILON
+        zoomInButton.isEnabled = controlsEnabled && clampedScale < MAX_ZOOM - ZOOM_EPSILON
     }
 
     private fun showShapeMenu() {
@@ -455,13 +486,16 @@ class CanvasFragment : Fragment() {
         val hasSelection = state?.hasSelection == true
         val canPaste = state?.canPaste == true
         val isBusy = state?.isBusy != false
+        val selection = drawingCanvas.currentSelection()
+        val hasSingleTextSelection = settings.tool == DrawingTool.TEXT &&
+            selection.texts.size == 1 && selection.strokes.isEmpty()
+        val showSelectionActions = (isLasso && hasSelection) || hasSingleTextSelection
         lassoHint.isVisible = isLasso && !hasSelection
-        copySelectionButton.isVisible = isLasso && hasSelection
-        deleteSelectionButton.isVisible = isLasso && hasSelection
+        copySelectionButton.isVisible = showSelectionActions
+        deleteSelectionButton.isVisible = showSelectionActions
         pasteSelectionButton.isVisible = isLasso && canPaste
-        editTextButton.isVisible = isLasso && hasSelection &&
-            drawingCanvas.currentSelection().texts.size == 1 &&
-            drawingCanvas.currentSelection().strokes.isEmpty()
+        editTextButton.isVisible = (isLasso || settings.tool == DrawingTool.TEXT) &&
+            selection.texts.size == 1 && selection.strokes.isEmpty()
         listOf(copySelectionButton, pasteSelectionButton, deleteSelectionButton, editTextButton)
             .forEach { it.isEnabled = !isBusy }
     }
@@ -631,9 +665,13 @@ class CanvasFragment : Fragment() {
         is CanvasEvent.PendingPersisted -> Unit
         is CanvasEvent.PendingDiscarded -> binding.drawingCanvas.discardPendingStroke(event.token)
         CanvasEvent.RefreshStrokes -> {
-            val strokes = (currentState as? CanvasUiState.Ready)?.strokes.orEmpty()
+            val state = currentState as? CanvasUiState.Ready
+            val strokes = state?.strokes.orEmpty()
+            val texts = state?.texts.orEmpty()
             renderedStrokes = strokes
+            renderedTexts = texts
             binding.drawingCanvas.refreshVisibleStrokes(strokes)
+            binding.drawingCanvas.setTexts(texts)
         }
     }
 
@@ -674,6 +712,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onAreaErased = null
         binding.drawingCanvas.onViewportChanged = null
         binding.drawingCanvas.onTextRequested = null
+        binding.drawingCanvas.onTextEditRequested = null
         binding.drawingCanvas.onSelectionChanged = null
         binding.drawingCanvas.onSelectionTransformed = null
         binding.pageList.adapter = null
@@ -689,6 +728,10 @@ class CanvasFragment : Fragment() {
         const val INVALID_NOTE_ID = -1L
         const val DEFAULT_TEXT_WIDTH = 0.35f
         const val PASTE_OFFSET_DP = 24f
+        const val MIN_ZOOM = 1f
+        const val MAX_ZOOM = 4f
+        const val ZOOM_STEP = 0.25f
+        const val ZOOM_EPSILON = 0.001f
         const val SHAPE_LINE_ID = 1
         const val SHAPE_RECTANGLE_ID = 2
         const val SHAPE_CIRCLE_ID = 3
