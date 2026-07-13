@@ -51,8 +51,8 @@ class NoteAdapter(
             val note = item.note
             noteTitle.text = note.title
             noteModifiedAt.text = root.context.getString(
-                R.string.note_modified_at,
-                dateFormatter.format(Date(note.updatedAt)),
+                if (note.deletedAt == null) R.string.note_modified_at else R.string.deleted_at,
+                dateFormatter.format(Date(note.deletedAt ?: note.updatedAt)),
             )
             noteCard.setOnClickListener { onClick(note) }
             noteMoreButton.setOnClickListener { onMoreClick(it, note) }

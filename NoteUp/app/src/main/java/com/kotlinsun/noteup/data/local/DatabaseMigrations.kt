@@ -29,4 +29,13 @@ object DatabaseMigrations {
             )
         }
     }
+
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE `notes` ADD COLUMN `deletedAt` INTEGER")
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_notes_deletedAt` ON `notes` (`deletedAt`)",
+            )
+        }
+    }
 }

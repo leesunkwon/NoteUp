@@ -43,6 +43,16 @@
             android:textAppearance="@style/TextAppearance.NoteUp.Body" />
 
         <TextView
+            android:id="@+id/trash_button"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/sidebar_item_height"
+            android:background="@drawable/bg_sidebar_item"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/spacing_medium"
+            android:text="@string/trash"
+            android:textAppearance="@style/TextAppearance.NoteUp.Body" />
+
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/spacing_medium"
@@ -99,6 +109,27 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/search_input_layout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:hint="@string/search_notes_hint"
+            app:endIconMode="clear_text"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/new_note_button">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/search_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/note_grid"
             android:layout_width="0dp"
@@ -109,7 +140,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/new_note_button"
+            app:layout_constraintTop_toBottomOf="@id/search_input_layout"
             tools:listitem="@layout/item_note" />
 
         <LinearLayout
@@ -126,12 +157,14 @@
             tools:visibility="visible">
 
             <TextView
+                android:id="@+id/empty_state_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/empty_notes_title"
                 android:textAppearance="@style/TextAppearance.NoteUp.Title" />
 
             <TextView
+                android:id="@+id/empty_state_description"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_small"

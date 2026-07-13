@@ -9,16 +9,22 @@ import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
+import com.kotlinsun.noteup.data.preferences.TrashRetentionStore
+import com.kotlinsun.noteup.data.trash.TrashCleanupService
 
 class AppContainer(context: Context) {
     private val database = Room.databaseBuilder(
         context.applicationContext,
         NoteUpDatabase::class.java,
         "noteup.db",
-    ).addMigrations(DatabaseMigrations.MIGRATION_1_2).build()
+    ).addMigrations(DatabaseMigrations.MIGRATION_1_2, DatabaseMigrations.MIGRATION_2_3).build()
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
     val pageThumbnailStore = PageThumbnailStore(context)
     val pageThumbnailService = PageThumbnailService(noteRepository, pageThumbnailStore)
+    val trashRetentionStore = TrashRetentionStore(context)
+    val trashCleanupService = TrashCleanupService(
+        noteRepository, trashRetentionStore, pageThumbnailService,
+    ).also { it.request() }
     val drawingToolSettingsStore = DrawingToolSettingsStore(context)
 }

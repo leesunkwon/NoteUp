@@ -25,6 +25,9 @@ interface PageDao {
     @Query("SELECT * FROM pages WHERE noteId = :noteId ORDER BY pageIndex ASC")
     suspend fun getByNote(noteId: Long): List<PageEntity>
 
+    @Query("SELECT id FROM pages WHERE noteId IN (:noteIds)")
+    suspend fun getIdsByNoteIds(noteIds: List<Long>): List<Long>
+
     @Insert
     suspend fun insert(page: PageEntity): Long
 
