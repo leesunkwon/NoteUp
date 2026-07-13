@@ -11,6 +11,7 @@ import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.data.preferences.TrashRetentionStore
 import com.kotlinsun.noteup.data.trash.TrashCleanupService
+import com.kotlinsun.noteup.data.export.NoteExportService
 
 class AppContainer(context: Context) {
     private val database = Room.databaseBuilder(
@@ -26,6 +27,7 @@ class AppContainer(context: Context) {
     val noteRepository: NoteRepository = LocalNoteRepository(database)
     val pageThumbnailStore = PageThumbnailStore(context)
     val pageThumbnailService = PageThumbnailService(noteRepository, pageThumbnailStore)
+    val noteExportService = NoteExportService(context, noteRepository)
     val trashRetentionStore = TrashRetentionStore(context)
     val trashCleanupService = TrashCleanupService(
         noteRepository, trashRetentionStore, pageThumbnailService,

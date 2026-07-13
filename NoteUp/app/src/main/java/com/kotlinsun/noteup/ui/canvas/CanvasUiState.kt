@@ -31,5 +31,8 @@ sealed interface CanvasUiState {
         val hasSelection: Boolean = false,
         val canPaste: Boolean = false,
         val selection: CanvasSelection = CanvasSelection(),
+        val isExporting: Boolean = false,
+        val exportCompletedPages: Int = 0,
+        val exportTotalPages: Int = 0,
     ) : CanvasUiState
 }

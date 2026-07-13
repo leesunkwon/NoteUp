@@ -1,11 +1,15 @@
 package com.kotlinsun.noteup.ui.canvas
 
+import android.app.Activity
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
+import androidx.core.content.FileProvider
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -36,6 +40,9 @@ import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.TextSize
+import com.kotlinsun.noteup.domain.model.ExportArtifact
+import com.kotlinsun.noteup.domain.model.ExportFormat
+import com.kotlinsun.noteup.domain.model.ExportUiState
 import kotlinx.coroutines.launch
 
 class CanvasFragment : Fragment() {
@@ -46,6 +53,22 @@ class CanvasFragment : Fragment() {
     private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
+    private var presentedArtifactPath: String? = null
+    private var savingArtifact = false
+    private val createDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null) {
+            savingArtifact = true
+            viewModel.saveExport(uri)
+        } else {
+            (viewModel.exportState.value as? ExportUiState.Ready)?.artifact?.let {
+                presentedArtifactPath = null
+                showExportResultDialog(it)
+            }
+        }
+    }
     private val pageAdapter by lazy {
         val store = (requireActivity().application as NoteUpApplication).container.pageThumbnailStore
         PageThumbnailAdapter(store, viewModel::selectPage, ::confirmPageDeletion, viewModel::reorderPages)
@@ -62,6 +85,7 @@ class CanvasFragment : Fragment() {
             container.drawingToolSettingsStore,
             container.pageThumbnailStore,
             container.pageThumbnailService,
+            container.noteExportService,
         )
     }
 
@@ -96,6 +120,7 @@ class CanvasFragment : Fragment() {
             thinButton, mediumButton, thickButton,
             strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
+        exportButton.setOnClickListener { showExportFormatDialog() }
         penToolButton.setOnClickListener { selectDrawingTool(DrawingTool.PEN) }
         highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
@@ -170,6 +195,7 @@ class CanvasFragment : Fragment() {
                     }
                 }
                 launch { viewModel.events.collect(::handleEvent) }
+                launch { viewModel.exportState.collect(::renderExportState) }
             }
         }
     }
@@ -180,12 +206,21 @@ class CanvasFragment : Fragment() {
         notFoundState.isVisible = state == CanvasUiState.NotFound
         if (state is CanvasUiState.Ready) {
             noteTitle.text = state.note.title
-            saveStatus.text = getString(if (state.isSaving) R.string.saving else R.string.saved)
+            saveStatus.text = when {
+                state.isExporting -> getString(
+                    R.string.export_progress,
+                    state.exportCompletedPages,
+                    state.exportTotalPages,
+                )
+                state.isSaving -> getString(R.string.saving)
+                else -> getString(R.string.saved)
+            }
             undoButton.isEnabled = state.canUndo
             redoButton.isEnabled = state.canRedo
             previousPageButton.isEnabled = !state.isBusy && state.pagePosition > 0
             nextPageButton.isEnabled = !state.isBusy && state.pagePosition < state.pages.lastIndex
             addPageButton.isEnabled = !state.isBusy
+            exportButton.isEnabled = !state.isBusy
             pageIndicator.text = getString(
                 R.string.page_indicator,
                 state.pagePosition + 1,
@@ -234,9 +269,86 @@ class CanvasFragment : Fragment() {
             previousPageButton.isEnabled = false
             nextPageButton.isEnabled = false
             addPageButton.isEnabled = false
+            exportButton.isEnabled = false
             pageIndicator.text = null
         }
         updateInputEnabled()
+    }
+
+    private fun showExportFormatDialog() {
+        val labels = arrayOf(
+            getString(R.string.export_current_png),
+            getString(R.string.export_current_webp),
+            getString(R.string.export_note_pdf),
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.export)
+            .setItems(labels) { _, index ->
+                when (index) {
+                    0 -> viewModel.exportCurrentPage(ExportFormat.PNG)
+                    1 -> viewModel.exportCurrentPage(ExportFormat.WEBP)
+                    else -> viewModel.exportNotePdf()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun renderExportState(state: ExportUiState) {
+        when (state) {
+            ExportUiState.Idle, is ExportUiState.Rendering -> Unit
+            is ExportUiState.Saving -> Unit
+            is ExportUiState.Ready -> {
+                if (savingArtifact) {
+                    savingArtifact = false
+                    Snackbar.make(binding.root, R.string.export_saved, Snackbar.LENGTH_SHORT).show()
+                    viewModel.clearExportResult()
+                } else if (presentedArtifactPath != state.artifact.file.absolutePath) {
+                    presentedArtifactPath = state.artifact.file.absolutePath
+                    showExportResultDialog(state.artifact)
+                }
+            }
+            is ExportUiState.Error -> {
+                savingArtifact = false
+                presentedArtifactPath = null
+                Snackbar.make(binding.root, R.string.export_failed, Snackbar.LENGTH_SHORT).show()
+                viewModel.clearExportResult()
+            }
+        }
+    }
+
+    private fun showExportResultDialog(artifact: ExportArtifact) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.export_complete)
+            .setMessage(artifact.displayName)
+            .setPositiveButton(R.string.share) { _, _ -> shareArtifact(artifact) }
+            .setNeutralButton(R.string.save_elsewhere) { _, _ -> launchCreateDocument(artifact) }
+            .setNegativeButton(R.string.close) { _, _ -> viewModel.clearExportResult() }
+            .setOnCancelListener { viewModel.clearExportResult() }
+            .show()
+    }
+
+    private fun shareArtifact(artifact: ExportArtifact) {
+        val uri = FileProvider.getUriForFile(
+            requireContext(), "${requireContext().packageName}.fileprovider", artifact.file,
+        )
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = artifact.mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = android.content.ClipData.newRawUri(artifact.displayName, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_export)))
+        viewModel.clearExportResult()
+    }
+
+    private fun launchCreateDocument(artifact: ExportArtifact) {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = artifact.mimeType
+            putExtra(Intent.EXTRA_TITLE, artifact.displayName)
+        }
+        createDocumentLauncher.launch(intent)
     }
 
     private fun renderSettings(settings: DrawingSettings) = with(binding) {
@@ -445,6 +557,7 @@ class CanvasFragment : Fragment() {
     private fun updateInputEnabled() {
         val state = currentState as? CanvasUiState.Ready
         binding.drawingCanvas.isInputEnabled = state != null && !state.isPageChanging &&
+            !state.isExporting &&
             !(state.isBusy && currentSettings.tool in setOf(
                 DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
             ))

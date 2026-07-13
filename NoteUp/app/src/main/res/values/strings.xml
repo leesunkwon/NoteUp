@@ -109,4 +109,15 @@
     <string name="text_large">32</string>
     <string name="delete_text_title">텍스트를 삭제할까요?</string>
     <string name="delete_text_message">내용이 비어 있어 텍스트 상자가 삭제됩니다.</string>
+    <string name="export">내보내기</string>
+    <string name="export_current_png">현재 페이지 PNG</string>
+    <string name="export_current_webp">현재 페이지 WebP</string>
+    <string name="export_note_pdf">전체 노트 PDF</string>
+    <string name="export_progress">내보내는 중 %1$d/%2$d</string>
+    <string name="export_complete">내보내기 완료</string>
+    <string name="share">공유</string>
+    <string name="save_elsewhere">다른 위치에 저장</string>
+    <string name="share_export">내보낸 파일 공유</string>
+    <string name="export_saved">파일을 저장했습니다.</string>
+    <string name="export_failed">내보내기를 완료하지 못했습니다.</string>
 </resources>
