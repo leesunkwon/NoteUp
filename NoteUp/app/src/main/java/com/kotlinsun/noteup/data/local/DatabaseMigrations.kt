@@ -38,4 +38,11 @@ object DatabaseMigrations {
             )
         }
     }
+
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("CREATE TABLE IF NOT EXISTS `canvas_texts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `pageId` INTEGER NOT NULL, `elementIndex` INTEGER NOT NULL, `x` REAL NOT NULL, `y` REAL NOT NULL, `boxWidth` REAL NOT NULL, `content` TEXT NOT NULL, `colorArgb` INTEGER NOT NULL, `textSizeSp` REAL NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, FOREIGN KEY(`pageId`) REFERENCES `pages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )")
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_canvas_texts_pageId_elementIndex` ON `canvas_texts` (`pageId`, `elementIndex`)")
+        }
+    }
 }

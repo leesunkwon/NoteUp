@@ -10,6 +10,7 @@ data class DrawingSettings(
     val pen: PenSettings = PenSettings(),
     val highlighter: HighlighterSettings = HighlighterSettings(),
     val eraserMode: EraserMode = EraserMode.STROKE,
+    val textSize: TextSize = TextSize.MEDIUM,
 )
 
 enum class EraserMode { STROKE, AREA }
@@ -23,7 +24,14 @@ enum class DrawingTool {
     PEN,
     HIGHLIGHTER,
     ERASER,
+    LASSO,
+    LINE,
+    RECTANGLE,
+    CIRCLE,
+    TEXT,
 }
+
+enum class TextSize(val sizeSp: Float) { SMALL(16f), MEDIUM(24f), LARGE(32f) }
 
 enum class PenColor(val argb: Int) {
     BLACK(0xFF202124.toInt()),

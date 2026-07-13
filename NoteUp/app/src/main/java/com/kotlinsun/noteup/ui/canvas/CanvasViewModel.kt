@@ -16,6 +16,10 @@ import com.kotlinsun.noteup.domain.model.PenThickness
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
+import com.kotlinsun.noteup.domain.model.StrokeDraft
+import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasTextDraft
+import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
@@ -61,6 +65,8 @@ class CanvasViewModel(
     private val historyState = MutableStateFlow(HistoryState())
     private val selectedPageId = MutableStateFlow<Long?>(null)
     private val viewportState = MutableStateFlow<Map<Long, CanvasViewport>>(emptyMap())
+    private val selectionState = MutableStateFlow(CanvasSelection())
+    private val clipboardState = MutableStateFlow(CanvasSelection())
     private val _settings = MutableStateFlow(settingsStore.load())
     val settings = _settings.asStateFlow()
     private val _errors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -81,14 +87,16 @@ class CanvasViewModel(
             } else {
                 thumbnailService.ensure(pages.map(Page::id))
                 combine(
-                    repository.observeStrokes(page.id), suppressedStrokeIds, thumbnailStore.revisions,
-                ) { strokes, hidden, revisions ->
+                    repository.observeStrokes(page.id), repository.observeTexts(page.id),
+                    suppressedStrokeIds, thumbnailStore.revisions,
+                ) { strokes, texts, hidden, revisions ->
                     CanvasUiState.Ready(
                         note = note,
                         pages = pages,
                         page = page,
                         pagePosition = pages.indexOfFirst { it.id == page.id },
                         strokes = strokes.filterNot { it.id in hidden },
+                        texts = texts,
                         viewport = CanvasViewport(),
                         thumbnailRevisions = revisions,
                         isSaving = false,
@@ -101,7 +109,7 @@ class CanvasViewModel(
             }
         }
 
-    val uiState = combine(
+    private val baseUiState = combine(
         content, pendingOperations, historyState, viewportState, pageCreationInProgress,
     ) { state, pending, history, viewports, isPageChanging ->
         if (state is CanvasUiState.Ready) {
@@ -114,6 +122,14 @@ class CanvasViewModel(
                 canRedo = pending == 0 && history.canRedo,
             )
         } else state
+    }
+
+    val uiState = combine(baseUiState, selectionState, clipboardState) { state, selection, clipboard ->
+        if (state is CanvasUiState.Ready) state.copy(
+            hasSelection = !selection.isEmpty,
+            canPaste = !clipboard.isEmpty,
+            selection = selection,
+        ) else state
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -176,6 +192,46 @@ class CanvasViewModel(
             return
         }
         enqueue(CanvasOperation.Add(stroke, pageId))
+    }
+
+    fun addText(draft: CanvasTextDraft) {
+        val pageId = (uiState.value as? CanvasUiState.Ready)?.page?.id ?: return
+        if (draft.content.isNotBlank()) enqueue(CanvasOperation.AddText(draft, pageId))
+    }
+
+    fun updateSelection(value: CanvasSelection) { selectionState.value = value }
+
+    fun transformSelection(change: SelectionChange) {
+        selectionState.value = change.after
+        enqueue(CanvasOperation.TransformSelection(change))
+    }
+
+    fun copySelection() { clipboardState.value = selectionState.value }
+
+    fun deleteSelection() {
+        val value = selectionState.value
+        if (value.isEmpty) return
+        selectionState.value = CanvasSelection()
+        enqueue(CanvasOperation.DeleteSelection(value))
+    }
+
+    fun pasteSelection(offsetX: Float, offsetY: Float) {
+        val source = clipboardState.value
+        val pageId = (uiState.value as? CanvasUiState.Ready)?.page?.id ?: return
+        if (!source.isEmpty) enqueue(CanvasOperation.PasteSelection(source, pageId, offsetX, offsetY))
+    }
+
+    fun editText(before: CanvasText, content: String) {
+        if (content.isBlank()) {
+            val selection = CanvasSelection(texts = listOf(before))
+            selectionState.value = CanvasSelection()
+            enqueue(CanvasOperation.DeleteSelection(selection))
+        } else {
+            val after = before.copy(content = content, updatedAt = System.currentTimeMillis())
+            transformSelection(
+                SelectionChange(CanvasSelection(texts = listOf(before)), CanvasSelection(texts = listOf(after))),
+            )
+        }
     }
 
     fun eraseStrokes(strokes: List<ErasableStroke>) {
@@ -272,6 +328,7 @@ class CanvasViewModel(
     fun selectHighlighterThickness(thickness: HighlighterThickness) = updateSettings(
         _settings.value.copy(highlighter = _settings.value.highlighter.copy(thickness = thickness)),
     )
+    fun selectTextSize(size: TextSize) = updateSettings(_settings.value.copy(textSize = size))
 
     private suspend fun processOperation(operation: CanvasOperation) {
         runCatching {
@@ -279,6 +336,12 @@ class CanvasViewModel(
                 is CanvasOperation.Add -> processAdd(operation.stroke, operation.pageId)
                 is CanvasOperation.Erase -> processErase(operation.targets)
                 is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
+                is CanvasOperation.AddText -> processAddText(operation.draft, operation.pageId)
+                is CanvasOperation.TransformSelection -> processTransformSelection(operation.change)
+                is CanvasOperation.DeleteSelection -> processDeleteSelection(operation.selection)
+                is CanvasOperation.PasteSelection -> processPasteSelection(
+                    operation.source, operation.pageId, operation.offsetX, operation.offsetY,
+                )
                 is CanvasOperation.CreatePage -> processCreatePage(operation.template)
                 is CanvasOperation.DeletePage -> processDeletePage(operation.pageId, operation.nextPageId)
                 is CanvasOperation.ReorderPages -> repository.reorderPages(noteId, operation.pageIds)
@@ -290,6 +353,66 @@ class CanvasViewModel(
             _errors.tryEmit(Unit)
             _events.tryEmit(CanvasEvent.RefreshStrokes)
         }
+    }
+
+    private suspend fun processAddText(draft: CanvasTextDraft, pageId: Long) {
+        val text = repository.addText(noteId, pageId, draft)
+        selectionState.value = CanvasSelection(texts = listOf(text))
+        pushNewCommand(CanvasCommand.ElementsAdded(emptyList(), listOf(text)))
+        thumbnailService.request(pageId)
+    }
+
+    private suspend fun processTransformSelection(change: SelectionChange) {
+        repository.updateElements(noteId, change.after.strokes, change.after.texts)
+        pushNewCommand(CanvasCommand.ElementsTransformed(change.before, change.after))
+        change.after.pageId()?.let(thumbnailService::request)
+    }
+
+    private suspend fun processDeleteSelection(selection: CanvasSelection) {
+        repository.deleteElements(noteId, selection.strokes, selection.texts)
+        pushNewCommand(CanvasCommand.ElementsDeleted(selection))
+        selection.pageId()?.let(thumbnailService::request)
+    }
+
+    private suspend fun processPasteSelection(
+        source: CanvasSelection,
+        pageId: Long,
+        offsetX: Float,
+        offsetY: Float,
+    ) {
+        val maximumX = maxOf(
+            source.strokes.flatMap { it.points }.maxOfOrNull { it.x } ?: 0f,
+            source.texts.maxOfOrNull { it.x + it.boxWidth } ?: 0f,
+        )
+        val maximumY = maxOf(
+            source.strokes.flatMap { it.points }.maxOfOrNull { it.y } ?: 0f,
+            source.texts.maxOfOrNull { it.y } ?: 0f,
+        )
+        val safeOffsetX = offsetX.coerceAtMost((1f - maximumX).coerceAtLeast(0f))
+        val safeOffsetY = offsetY.coerceAtMost((1f - maximumY).coerceAtLeast(0f))
+        val strokeDrafts = source.strokes.map { stroke ->
+            StrokeDraft(
+                stroke.tool, stroke.colorArgb, stroke.width,
+                stroke.points.map {
+                    it.copy(
+                        x = it.x + safeOffsetX,
+                        y = it.y + safeOffsetY,
+                    )
+                },
+            )
+        }
+        val textDrafts = source.texts.map { text ->
+            CanvasTextDraft(
+                    text.x + safeOffsetX,
+                    text.y + safeOffsetY,
+                    text.boxWidth, text.content, text.colorArgb, text.textSizeSp,
+            )
+        }
+        val (strokes, texts) = repository.copyElements(noteId, pageId, strokeDrafts, textDrafts)
+        val pasted = CanvasSelection(strokes, texts)
+        selectionState.value = pasted
+        pushNewCommand(CanvasCommand.ElementsAdded(strokes, texts))
+        thumbnailService.request(pageId)
     }
 
     private suspend fun processAdd(pending: PendingCanvasStroke, pageId: Long) {
@@ -364,12 +487,19 @@ class CanvasViewModel(
         tokenToStroke.clear()
         tokensScheduledForErase.clear()
         suppressedStrokeIds.value = emptySet()
+        selectionState.value = CanvasSelection()
         publishHistoryState()
     }
 
     private suspend fun processUndo() {
         val command = undoStack.peekLast() ?: return
         applyInverse(command)
+        selectionState.value = when (command) {
+            is CanvasCommand.ElementsTransformed -> command.before
+            is CanvasCommand.ElementsDeleted -> command.selection
+            is CanvasCommand.ElementsAdded -> CanvasSelection()
+            else -> selectionState.value
+        }
         undoStack.removeLast()
         redoStack.addLast(command)
         publishHistoryState()
@@ -379,6 +509,12 @@ class CanvasViewModel(
     private suspend fun processRedo() {
         val command = redoStack.peekLast() ?: return
         apply(command)
+        selectionState.value = when (command) {
+            is CanvasCommand.ElementsTransformed -> command.after
+            is CanvasCommand.ElementsDeleted -> CanvasSelection()
+            is CanvasCommand.ElementsAdded -> CanvasSelection(command.strokes, command.texts)
+            else -> selectionState.value
+        }
         redoStack.removeLast()
         undoStack.addLast(command)
         publishHistoryState()
@@ -401,6 +537,13 @@ class CanvasViewModel(
                 repository.deleteStrokes(noteId, command.before)
                 repository.restoreStrokes(noteId, command.after)
             }
+            is CanvasCommand.ElementsAdded -> repository.restoreElements(noteId, command.strokes, command.texts)
+            is CanvasCommand.ElementsDeleted -> repository.deleteElements(
+                noteId, command.selection.strokes, command.selection.texts,
+            )
+            is CanvasCommand.ElementsTransformed -> repository.updateElements(
+                noteId, command.after.strokes, command.after.texts,
+            )
         }
     }
 
@@ -420,6 +563,13 @@ class CanvasViewModel(
                 repository.deleteStrokes(noteId, command.after)
                 repository.restoreStrokes(noteId, command.before)
             }
+            is CanvasCommand.ElementsAdded -> repository.deleteElements(noteId, command.strokes, command.texts)
+            is CanvasCommand.ElementsDeleted -> repository.restoreElements(
+                noteId, command.selection.strokes, command.selection.texts,
+            )
+            is CanvasCommand.ElementsTransformed -> repository.updateElements(
+                noteId, command.before.strokes, command.before.texts,
+            )
         }
     }
 
@@ -450,6 +600,10 @@ class CanvasViewModel(
                     }
                 }
             }
+            is CanvasOperation.AddText -> Unit
+            is CanvasOperation.TransformSelection -> selectionState.value = operation.change.before
+            is CanvasOperation.DeleteSelection -> selectionState.value = operation.selection
+            is CanvasOperation.PasteSelection -> selectionState.value = CanvasSelection()
             is CanvasOperation.CreatePage -> Unit
             is CanvasOperation.DeletePage -> Unit
             is CanvasOperation.ReorderPages -> Unit
@@ -466,6 +620,9 @@ class CanvasViewModel(
                 command.before.forEach { suppress(it.id) }
                 command.after.forEach { unsuppress(it.id) }
             }
+            is CanvasCommand.ElementsAdded -> Unit
+            is CanvasCommand.ElementsDeleted -> Unit
+            is CanvasCommand.ElementsTransformed -> selectionState.value = command.after
             null -> Unit
         }
     }
@@ -478,6 +635,9 @@ class CanvasViewModel(
                 command.before.forEach { unsuppress(it.id) }
                 command.after.forEach { suppress(it.id) }
             }
+            is CanvasCommand.ElementsAdded -> Unit
+            is CanvasCommand.ElementsDeleted -> Unit
+            is CanvasCommand.ElementsTransformed -> selectionState.value = command.before
             null -> Unit
         }
     }
@@ -513,7 +673,12 @@ class CanvasViewModel(
         is CanvasCommand.AddStroke -> stroke.pageId
         is CanvasCommand.DeleteStrokes -> strokes.firstOrNull()?.pageId
         is CanvasCommand.ReplaceStrokes -> before.firstOrNull()?.pageId ?: after.firstOrNull()?.pageId
+        is CanvasCommand.ElementsAdded -> strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId
+        is CanvasCommand.ElementsDeleted -> selection.pageId()
+        is CanvasCommand.ElementsTransformed -> after.pageId()
     }
+
+    private fun CanvasSelection.pageId(): Long? = strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId
 
     override fun onCleared() {
         operationQueue.close()
@@ -524,6 +689,15 @@ class CanvasViewModel(
         data class Add(val stroke: PendingCanvasStroke, val pageId: Long) : CanvasOperation
         data class Erase(val targets: List<ErasableStroke>) : CanvasOperation
         data class AreaErase(val replacements: List<AreaEraseReplacement>) : CanvasOperation
+        data class AddText(val draft: CanvasTextDraft, val pageId: Long) : CanvasOperation
+        data class TransformSelection(val change: SelectionChange) : CanvasOperation
+        data class DeleteSelection(val selection: CanvasSelection) : CanvasOperation
+        data class PasteSelection(
+            val source: CanvasSelection,
+            val pageId: Long,
+            val offsetX: Float,
+            val offsetY: Float,
+        ) : CanvasOperation
         sealed interface PageOperation : CanvasOperation
         data class CreatePage(val template: PageTemplate) : PageOperation
         data class DeletePage(val pageId: Long, val nextPageId: Long?) : PageOperation
@@ -536,6 +710,12 @@ class CanvasViewModel(
         data class AddStroke(val stroke: Stroke) : CanvasCommand
         data class DeleteStrokes(val strokes: List<Stroke>) : CanvasCommand
         data class ReplaceStrokes(val before: List<Stroke>, val after: List<Stroke>) : CanvasCommand
+        data class ElementsAdded(val strokes: List<Stroke>, val texts: List<CanvasText>) : CanvasCommand
+        data class ElementsDeleted(val selection: CanvasSelection) : CanvasCommand
+        data class ElementsTransformed(
+            val before: CanvasSelection,
+            val after: CanvasSelection,
+        ) : CanvasCommand
     }
 
     private data class HistoryState(val canUndo: Boolean = false, val canRedo: Boolean = false)

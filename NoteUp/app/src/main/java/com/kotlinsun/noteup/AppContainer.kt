@@ -17,7 +17,11 @@ class AppContainer(context: Context) {
         context.applicationContext,
         NoteUpDatabase::class.java,
         "noteup.db",
-    ).addMigrations(DatabaseMigrations.MIGRATION_1_2, DatabaseMigrations.MIGRATION_2_3).build()
+    ).addMigrations(
+        DatabaseMigrations.MIGRATION_1_2,
+        DatabaseMigrations.MIGRATION_2_3,
+        DatabaseMigrations.MIGRATION_3_4,
+    ).build()
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
     val pageThumbnailStore = PageThumbnailStore(context)

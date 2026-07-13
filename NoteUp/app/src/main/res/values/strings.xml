@@ -93,4 +93,20 @@
     <string name="trash_retention_30_days">30일</string>
     <string name="trash_retention_90_days">90일</string>
     <string name="trash_retention_never">자동 삭제 안 함</string>
+    <string name="lasso_tool">올가미</string>
+    <string name="line_tool">직선</string>
+    <string name="rectangle_tool">사각형</string>
+    <string name="circle_tool">원</string>
+    <string name="text_tool">텍스트</string>
+    <string name="copy_selection">복사</string>
+    <string name="paste_selection">붙여넣기</string>
+    <string name="delete_selection">선택 삭제</string>
+    <string name="edit_text">텍스트 편집</string>
+    <string name="enter_text">텍스트 입력</string>
+    <string name="text_hint">내용을 입력하세요</string>
+    <string name="text_small">16</string>
+    <string name="text_medium">24</string>
+    <string name="text_large">32</string>
+    <string name="delete_text_title">텍스트를 삭제할까요?</string>
+    <string name="delete_text_message">내용이 비어 있어 텍스트 상자가 삭제됩니다.</string>
 </resources>

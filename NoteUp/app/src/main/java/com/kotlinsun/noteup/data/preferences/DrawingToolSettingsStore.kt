@@ -10,6 +10,7 @@ import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.PenSettings
 import com.kotlinsun.noteup.domain.model.PenThickness
+import com.kotlinsun.noteup.domain.model.TextSize
 
 class DrawingToolSettingsStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
@@ -46,6 +47,10 @@ class DrawingToolSettingsStore(context: Context) {
             preferences.getString(KEY_ERASER_MODE, null),
             EraserMode.STROKE,
         ),
+        textSize = enumValueOrDefault(
+            preferences.getString(KEY_TEXT_SIZE, null),
+            TextSize.MEDIUM,
+        ),
     )
 
     fun save(settings: DrawingSettings) {
@@ -56,6 +61,7 @@ class DrawingToolSettingsStore(context: Context) {
             .putString(KEY_HIGHLIGHTER_COLOR, settings.highlighter.color.name)
             .putString(KEY_HIGHLIGHTER_THICKNESS, settings.highlighter.thickness.name)
             .putString(KEY_ERASER_MODE, settings.eraserMode.name)
+            .putString(KEY_TEXT_SIZE, settings.textSize.name)
             .apply()
     }
 
@@ -72,5 +78,6 @@ class DrawingToolSettingsStore(context: Context) {
         const val KEY_HIGHLIGHTER_COLOR = "highlighter_color"
         const val KEY_HIGHLIGHTER_THICKNESS = "highlighter_thickness"
         const val KEY_ERASER_MODE = "eraser_mode"
+        const val KEY_TEXT_SIZE = "text_size"
     }
 }

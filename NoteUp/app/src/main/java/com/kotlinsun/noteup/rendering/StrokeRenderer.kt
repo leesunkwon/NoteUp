@@ -3,6 +3,7 @@ package com.kotlinsun.noteup.rendering
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import com.kotlinsun.noteup.domain.model.StrokePoint
 import com.kotlinsun.noteup.domain.model.StrokeTool
 
@@ -25,6 +26,11 @@ class StrokeRenderer {
         tool: StrokeTool,
     ) {
         if (points.isEmpty() || canvasWidth <= 0 || canvasHeight <= 0) return
+
+        if (tool == StrokeTool.LINE || tool == StrokeTool.RECTANGLE || tool == StrokeTool.CIRCLE) {
+            drawShape(canvas, points, colorArgb, baseWidthDp, canvasWidth, canvasHeight, density, tool)
+            return
+        }
 
         if (tool == StrokeTool.HIGHLIGHTER) {
             drawHighlighter(canvas, points, colorArgb, baseWidthDp, canvasWidth, canvasHeight, density)
@@ -81,6 +87,37 @@ class StrokeRenderer {
         segmentPath.moveTo(previousEndX, previousEndY)
         segmentPath.quadTo(previousX, previousY, previousX, previousY)
         canvas.drawPath(segmentPath, paint)
+    }
+
+    private fun drawShape(
+        canvas: Canvas,
+        points: List<StrokePoint>,
+        colorArgb: Int,
+        widthDp: Float,
+        canvasWidth: Int,
+        canvasHeight: Int,
+        density: Float,
+        tool: StrokeTool,
+    ) {
+        if (points.size < 2) return
+        val start = points.first()
+        val end = points.last()
+        val left = minOf(start.x, end.x) * canvasWidth
+        val top = minOf(start.y, end.y) * canvasHeight
+        val right = maxOf(start.x, end.x) * canvasWidth
+        val bottom = maxOf(start.y, end.y) * canvasHeight
+        paint.style = Paint.Style.STROKE
+        paint.color = colorArgb
+        paint.strokeWidth = widthDp * density
+        when (tool) {
+            StrokeTool.LINE -> canvas.drawLine(
+                start.x * canvasWidth, start.y * canvasHeight,
+                end.x * canvasWidth, end.y * canvasHeight, paint,
+            )
+            StrokeTool.RECTANGLE -> canvas.drawRect(left, top, right, bottom, paint)
+            StrokeTool.CIRCLE -> canvas.drawOval(RectF(left, top, right, bottom), paint)
+            else -> Unit
+        }
     }
 
     private fun drawHighlighter(
