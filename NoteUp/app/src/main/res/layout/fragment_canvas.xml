@@ -407,7 +407,7 @@
                 android:contentDescription="@string/zoom_reset"
                 android:minWidth="@dimen/control_height"
                 android:paddingHorizontal="@dimen/spacing_small"
-                android:text="@string/zoom_reset_short" />
+                android:text="@string/zoom_reset" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/zoom_in_button"
