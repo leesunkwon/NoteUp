@@ -316,13 +316,11 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/context_toolbar" />
 
-    <LinearLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/page_navigation_bar"
         android:layout_width="0dp"
         android:layout_height="@dimen/page_navigation_height"
         android:background="@drawable/bg_top_hairline"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
         android:paddingHorizontal="@dimen/spacing_small"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -333,14 +331,18 @@
             style="@style/Widget.NoteUp.Button.Utility"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/page_list" />
+            android:text="@string/page_list"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/previous_page_button"
             style="@style/Widget.NoteUp.Button.Utility"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/previous_page" />
+            android:text="@string/previous_page"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/page_indicator"
@@ -348,6 +350,7 @@
             android:layout_height="wrap_content"
             android:gravity="center"
             android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+            android:visibility="gone"
             tools:text="1 / 3" />
 
         <com.google.android.material.button.MaterialButton
@@ -355,78 +358,76 @@
             style="@style/Widget.NoteUp.Button.Utility"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/next_page" />
+            android:text="@string/next_page"
+            android:visibility="gone" />
 
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/zoom_controls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/noteup_soft_cloud"
+            app:cardCornerRadius="@dimen/zoom_floating_corner_radius"
+            app:cardElevation="0dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:strokeColor="@color/noteup_hairline_soft"
+            app:strokeWidth="@dimen/hairline_width">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom_out_button"
+                    style="@style/Widget.NoteUp.Button.IconUtility"
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@string/zoom_out"
+                    android:text="@string/zoom_out_symbol" />
+
+                <TextView
+                    android:id="@+id/zoom_percentage"
+                    android:layout_width="@dimen/zoom_percentage_width"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:text="@string/zoom_percentage_default"
+                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+                    tools:text="125%" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom_reset_button"
+                    style="@style/Widget.NoteUp.Button.Utility"
+                    android:layout_width="wrap_content"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@string/zoom_reset"
+                    android:minWidth="@dimen/control_height"
+                    android:paddingHorizontal="@dimen/spacing_small"
+                    android:text="@string/zoom_reset" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom_in_button"
+                    style="@style/Widget.NoteUp.Button.IconUtility"
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@string/zoom_in"
+                    android:text="@string/zoom_in_symbol" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/add_page_button"
             style="@style/Widget.NoteUp.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/add_page" />
-    </LinearLayout>
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/zoom_controls"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="@dimen/spacing_medium"
-        app:cardBackgroundColor="@color/noteup_canvas"
-        app:cardCornerRadius="@dimen/zoom_floating_corner_radius"
-        app:cardElevation="@dimen/zoom_floating_elevation"
-        app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:strokeColor="@color/noteup_hairline_soft"
-        app:strokeWidth="@dimen/hairline_width">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:padding="@dimen/spacing_extra_small">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/zoom_out_button"
-                style="@style/Widget.NoteUp.Button.IconUtility"
-                android:layout_width="@dimen/control_height"
-                android:layout_height="@dimen/control_height"
-                android:contentDescription="@string/zoom_out"
-                android:text="@string/zoom_out_symbol" />
-
-            <TextView
-                android:id="@+id/zoom_percentage"
-                android:layout_width="@dimen/zoom_percentage_width"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="@string/zoom_percentage_default"
-                android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
-                tools:text="125%" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/zoom_reset_button"
-                style="@style/Widget.NoteUp.Button.Utility"
-                android:layout_width="wrap_content"
-                android:layout_height="@dimen/control_height"
-                android:contentDescription="@string/zoom_reset"
-                android:minWidth="@dimen/control_height"
-                android:paddingHorizontal="@dimen/spacing_small"
-                android:text="@string/zoom_reset" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/zoom_in_button"
-                style="@style/Widget.NoteUp.Button.IconUtility"
-                android:layout_width="@dimen/control_height"
-                android:layout_height="@dimen/control_height"
-                android:contentDescription="@string/zoom_in"
-                android:text="@string/zoom_in_symbol" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+            android:text="@string/add_page"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/page_panel"
