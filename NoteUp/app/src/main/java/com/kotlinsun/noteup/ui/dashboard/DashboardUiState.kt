@@ -5,8 +5,14 @@ import com.kotlinsun.noteup.domain.model.Notebook
 
 data class DashboardUiState(
     val notebooks: List<Notebook> = emptyList(),
-    val notes: List<Note> = emptyList(),
+    val notes: List<DashboardNoteItem> = emptyList(),
     val filter: DashboardFilter = DashboardFilter.All,
+)
+
+data class DashboardNoteItem(
+    val note: Note,
+    val firstPageId: Long?,
+    val thumbnailRevision: Long,
 )
 
 sealed interface DashboardFilter {

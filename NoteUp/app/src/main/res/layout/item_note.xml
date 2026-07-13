@@ -19,11 +19,13 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <View
+        <ImageView
+            android:id="@+id/note_preview"
             android:layout_width="match_parent"
             android:layout_height="@dimen/note_preview_height"
             android:background="@drawable/bg_note_preview"
-            android:contentDescription="@string/blank_page_preview" />
+            android:contentDescription="@string/blank_page_preview"
+            android:scaleType="centerCrop" />
 
         <LinearLayout
             android:layout_width="match_parent"

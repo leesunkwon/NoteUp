@@ -34,17 +34,26 @@ class DashboardFragment : Fragment() {
 
     private val viewModel: DashboardViewModel by viewModels {
         val application = requireActivity().application as NoteUpApplication
-        DashboardViewModel.Factory(this, application.container.noteRepository)
+        DashboardViewModel.Factory(
+            this,
+            application.container.noteRepository,
+            application.container.pageThumbnailStore,
+            application.container.pageThumbnailService,
+        )
     }
 
     private val notebookAdapter = NotebookAdapter(
         onClick = { viewModel.selectNotebook(it.id) },
         onMoreClick = ::showNotebookMenu,
     )
-    private val noteAdapter = NoteAdapter(
-        onClick = ::openNote,
-        onMoreClick = ::showNoteMenu,
-    )
+    private val noteAdapter by lazy {
+        val store = (requireActivity().application as NoteUpApplication).container.pageThumbnailStore
+        NoteAdapter(
+            onClick = ::openNote,
+            onMoreClick = ::showNoteMenu,
+            thumbnailStore = store,
+        )
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,

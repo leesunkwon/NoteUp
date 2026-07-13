@@ -20,6 +20,7 @@ sealed interface CanvasUiState {
         val pagePosition: Int,
         val strokes: List<Stroke>,
         val viewport: CanvasViewport,
+        val thumbnailRevisions: Map<Long, Long>,
         val isSaving: Boolean,
         val isBusy: Boolean,
         val isPageChanging: Boolean,

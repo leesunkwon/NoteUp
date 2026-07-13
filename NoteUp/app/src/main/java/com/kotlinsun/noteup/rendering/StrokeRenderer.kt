@@ -1,4 +1,4 @@
-package com.kotlinsun.noteup.ui.canvas
+package com.kotlinsun.noteup.rendering
 
 import android.graphics.Canvas
 import android.graphics.Paint

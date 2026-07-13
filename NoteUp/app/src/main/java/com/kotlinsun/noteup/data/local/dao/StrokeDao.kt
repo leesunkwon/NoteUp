@@ -12,6 +12,9 @@ interface StrokeDao {
     @Query("SELECT * FROM strokes WHERE pageId = :pageId ORDER BY strokeIndex ASC")
     fun observeByPage(pageId: Long): Flow<List<StrokeEntity>>
 
+    @Query("SELECT * FROM strokes WHERE pageId = :pageId ORDER BY strokeIndex ASC")
+    suspend fun getByPage(pageId: Long): List<StrokeEntity>
+
     @Query("SELECT COALESCE(MAX(strokeIndex), -1) + 1 FROM strokes WHERE pageId = :pageId")
     suspend fun nextStrokeIndex(pageId: Long): Int
 
