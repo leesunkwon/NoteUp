@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
@@ -24,6 +25,7 @@ import com.kotlinsun.noteup.domain.model.HighlighterColor
 import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.PenThickness
+import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
 import kotlinx.coroutines.launch
 
@@ -31,6 +33,7 @@ class CanvasFragment : Fragment() {
     private var _binding: FragmentCanvasBinding? = null
     private val binding get() = checkNotNull(_binding)
     private var renderedStrokes: List<Stroke> = emptyList()
+    private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
 
@@ -57,6 +60,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokeCompleted = viewModel::addStroke
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
         binding.drawingCanvas.onAreaErased = viewModel::eraseArea
+        binding.drawingCanvas.onViewportChanged = viewModel::updateViewport
         setupToolbar()
         observeState()
     }
@@ -81,6 +85,9 @@ class CanvasFragment : Fragment() {
         thickButton.setOnClickListener { selectThicknessSlot(2) }
         undoButton.setOnClickListener { viewModel.undo() }
         redoButton.setOnClickListener { viewModel.redo() }
+        previousPageButton.setOnClickListener { viewModel.selectPreviousPage() }
+        nextPageButton.setOnClickListener { viewModel.selectNextPage() }
+        addPageButton.setOnClickListener { showPageTemplateDialog() }
     }
 
     private fun observeState() {
@@ -107,15 +114,39 @@ class CanvasFragment : Fragment() {
             saveStatus.text = getString(if (state.isSaving) R.string.saving else R.string.saved)
             undoButton.isEnabled = state.canUndo
             redoButton.isEnabled = state.canRedo
-            if (renderedStrokes != state.strokes) {
+            previousPageButton.isEnabled = !state.isBusy && state.pagePosition > 0
+            nextPageButton.isEnabled = !state.isBusy && state.pagePosition < state.pages.lastIndex
+            addPageButton.isEnabled = !state.isBusy
+            pageIndicator.text = getString(
+                R.string.page_indicator,
+                state.pagePosition + 1,
+                state.pages.size,
+            )
+            if (renderedPageId != state.page.id) {
+                renderedPageId = state.page.id
                 renderedStrokes = state.strokes
-                drawingCanvas.setStrokes(state.strokes)
+                drawingCanvas.showPage(
+                    state.page.id,
+                    state.page.templateType,
+                    state.strokes,
+                    state.viewport,
+                )
+            } else {
+                if (renderedStrokes != state.strokes) {
+                    renderedStrokes = state.strokes
+                    drawingCanvas.setStrokes(state.strokes)
+                }
+                drawingCanvas.setViewport(state.viewport)
             }
         } else {
             noteTitle.text = getString(R.string.canvas_title)
             saveStatus.text = null
             undoButton.isEnabled = false
             redoButton.isEnabled = false
+            previousPageButton.isEnabled = false
+            nextPageButton.isEnabled = false
+            addPageButton.isEnabled = false
+            pageIndicator.text = null
         }
         updateInputEnabled()
     }
@@ -196,6 +227,28 @@ class CanvasFragment : Fragment() {
         }
     }
 
+    private fun showPageTemplateDialog() {
+        val templates = arrayOf(
+            getString(R.string.template_blank),
+            getString(R.string.template_lined),
+            getString(R.string.template_grid),
+        )
+        var selectedIndex = 0
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.select_page_template)
+            .setSingleChoiceItems(templates, selectedIndex) { _, which -> selectedIndex = which }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.create) { _, _ ->
+                val template = when (selectedIndex) {
+                    1 -> PageTemplate.LINED
+                    2 -> PageTemplate.GRID
+                    else -> PageTemplate.BLANK
+                }
+                viewModel.createPage(template)
+            }
+            .show()
+    }
+
     private fun handleEvent(event: CanvasEvent) = when (event) {
         is CanvasEvent.PendingPersisted -> Unit
         is CanvasEvent.PendingDiscarded -> binding.drawingCanvas.discardPendingStroke(event.token)
@@ -208,7 +261,7 @@ class CanvasFragment : Fragment() {
 
     private fun updateInputEnabled() {
         val state = currentState as? CanvasUiState.Ready
-        binding.drawingCanvas.isInputEnabled = state != null &&
+        binding.drawingCanvas.isInputEnabled = state != null && !state.isPageChanging &&
             !(state.isBusy && currentSettings.tool == DrawingTool.ERASER)
     }
 
@@ -231,7 +284,9 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokeCompleted = null
         binding.drawingCanvas.onStrokesErased = null
         binding.drawingCanvas.onAreaErased = null
+        binding.drawingCanvas.onViewportChanged = null
         renderedStrokes = emptyList()
+        renderedPageId = null
         _binding = null
         super.onDestroyView()
     }

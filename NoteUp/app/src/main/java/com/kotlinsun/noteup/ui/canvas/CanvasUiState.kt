@@ -4,15 +4,25 @@ import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.Stroke
 
+data class CanvasViewport(
+    val scale: Float = 1f,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+)
+
 sealed interface CanvasUiState {
     data object Loading : CanvasUiState
     data object NotFound : CanvasUiState
     data class Ready(
         val note: Note,
+        val pages: List<Page>,
         val page: Page,
+        val pagePosition: Int,
         val strokes: List<Stroke>,
+        val viewport: CanvasViewport,
         val isSaving: Boolean,
         val isBusy: Boolean,
+        val isPageChanging: Boolean,
         val canUndo: Boolean,
         val canRedo: Boolean,
     ) : CanvasUiState

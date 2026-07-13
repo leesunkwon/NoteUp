@@ -61,4 +61,12 @@
     <string name="highlighter_color_pink">분홍색 형광펜</string>
     <string name="highlighter_color_blue">파란색 형광펜</string>
     <string name="stroke_operation_error">필기 작업을 완료하지 못했습니다.</string>
+    <string name="previous_page">이전</string>
+    <string name="next_page">다음</string>
+    <string name="add_page">+ 페이지 추가</string>
+    <string name="page_indicator">%1$d / %2$d</string>
+    <string name="select_page_template">페이지 속지 선택</string>
+    <string name="template_blank">백지</string>
+    <string name="template_lined">줄노트</string>
+    <string name="template_grid">모눈</string>
 </resources>
