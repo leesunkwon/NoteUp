@@ -397,12 +397,6 @@ class CanvasFragment : Fragment() {
                 else -> R.string.shape_tool
             },
         )
-        penToolButton.alpha = selectionAlpha(penToolButton.isChecked)
-        highlighterToolButton.alpha = selectionAlpha(highlighterToolButton.isChecked)
-        eraserToolButton.alpha = selectionAlpha(eraserToolButton.isChecked)
-        listOf(lassoToolButton, shapeToolButton, textToolButton)
-            .forEach { it.alpha = selectionAlpha(it.isChecked) }
-
         val showSettings = settings.tool in DRAWING_OPTION_TOOLS
         colorButtons().forEach { it.isVisible = showSettings }
         thicknessButtons().forEach { it.isVisible = showSettings }
@@ -410,8 +404,6 @@ class CanvasFragment : Fragment() {
         areaEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
         strokeEraserModeButton.isChecked = settings.eraserMode == EraserMode.STROKE
         areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
-        strokeEraserModeButton.alpha = selectionAlpha(strokeEraserModeButton.isChecked)
-        areaEraserModeButton.alpha = selectionAlpha(areaEraserModeButton.isChecked)
         if (showSettings) renderColorAndThickness(settings)
 
         val state = currentState as? CanvasUiState.Ready
@@ -455,7 +447,6 @@ class CanvasFragment : Fragment() {
             button.backgroundTintList = ColorStateList.valueOf(requireContext().getColor(color.second))
             button.contentDescription = getString(color.third)
             button.strokeWidth = if (selected) strokeWidth else 0
-            button.alpha = selectionAlpha(selected)
         }
 
         val selectedThickness = if (settings.tool == DrawingTool.HIGHLIGHTER) {
@@ -474,7 +465,6 @@ class CanvasFragment : Fragment() {
         }
         thicknessButtons().forEachIndexed { index, button ->
             button.isChecked = index == selectedThickness
-            button.alpha = selectionAlpha(button.isChecked)
         }
     }
 
@@ -619,8 +609,6 @@ class CanvasFragment : Fragment() {
     private fun thicknessButtons(): List<MaterialButton> = with(binding) {
         listOf(thinButton, mediumButton, thickButton)
     }
-
-    private fun selectionAlpha(selected: Boolean) = if (selected) 1f else 0.55f
 
     override fun onStop() {
         binding.drawingCanvas.cancelActiveStroke()

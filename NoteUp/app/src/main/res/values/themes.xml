@@ -1,13 +1,24 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.NoteUp" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Base.Theme.NoteUp" parent="Theme.Material3.Light.NoActionBar">
         <item name="colorPrimary">@color/noteup_primary</item>
         <item name="colorOnPrimary">@color/noteup_on_primary</item>
         <item name="colorSurface">@color/noteup_surface</item>
         <item name="colorOnSurface">@color/noteup_on_surface</item>
+        <item name="colorSurfaceVariant">@color/noteup_soft_cloud</item>
+        <item name="colorOnSurfaceVariant">@color/noteup_charcoal</item>
+        <item name="colorOutline">@color/noteup_hairline</item>
+        <item name="colorSurfaceInverse">@color/noteup_ink</item>
+        <item name="colorOnSurfaceInverse">@color/noteup_canvas</item>
+        <item name="colorPrimaryInverse">@color/noteup_canvas</item>
         <item name="android:colorBackground">@color/noteup_background</item>
         <item name="android:fontFamily">sans</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.NoteUp.MaterialAlertDialog</item>
+        <item name="snackbarStyle">@style/Widget.NoteUp.Snackbar</item>
+        <item name="textInputStyle">@style/Widget.NoteUp.TextInputLayout</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">@color/noteup_canvas</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

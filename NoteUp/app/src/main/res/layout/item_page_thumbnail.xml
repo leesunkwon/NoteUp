@@ -30,21 +30,24 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+            android:textColor="@color/noteup_page_item_text"
             tools:text="1페이지" />
 
         <TextView
             android:id="@+id/page_template"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="@color/noteup_secondary_text"
+            android:textAppearance="@style/TextAppearance.NoteUp.CaptionSmall"
+            android:textColor="@color/noteup_page_item_secondary_text"
             tools:text="백지" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/delete_page_button"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.NoteUp.Button.Utility"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:textColor="@color/noteup_page_item_text"
             android:text="@string/delete" />
     </LinearLayout>
 </LinearLayout>

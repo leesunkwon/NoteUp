@@ -2,13 +2,13 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_activated="true">
         <shape>
-            <corners android:radius="12dp" />
+            <corners android:radius="@dimen/control_corner_radius" />
             <solid android:color="@color/noteup_sidebar_selected" />
         </shape>
     </item>
     <item>
         <shape>
-            <corners android:radius="12dp" />
+            <corners android:radius="@dimen/control_corner_radius" />
             <solid android:color="@android:color/transparent" />
         </shape>
     </item>
