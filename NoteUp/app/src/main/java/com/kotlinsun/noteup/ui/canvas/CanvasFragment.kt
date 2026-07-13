@@ -126,6 +126,12 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onTextEditRequested = ::showEditTextDialog
         binding.drawingCanvas.onSelectionChanged = viewModel::updateSelection
         binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
+        binding.drawingCanvas.onPageSwipe = { direction ->
+            when (direction) {
+                PageSwipeDirection.PREVIOUS -> viewModel.selectPreviousPage()
+                PageSwipeDirection.NEXT -> viewModel.selectNextPage()
+            }
+        }
         setupToolbar()
         setupPagePanel()
         binding.pagePanel.isVisible = pagePanelOpen
@@ -770,6 +776,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onTextEditRequested = null
         binding.drawingCanvas.onSelectionChanged = null
         binding.drawingCanvas.onSelectionTransformed = null
+        binding.drawingCanvas.onPageSwipe = null
         binding.pageList.adapter = null
         renderedStrokes = emptyList()
         renderedTexts = emptyList()

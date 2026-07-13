@@ -44,6 +44,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onTextEditRequested: ((CanvasText) -> Unit)? = null
     var onSelectionChanged: ((CanvasSelection) -> Unit)? = null
     var onSelectionTransformed: ((SelectionChange) -> Unit)? = null
+    var onPageSwipe: ((PageSwipeDirection) -> Unit)? = null
     var drawingSettings: DrawingSettings = DrawingSettings()
         set(value) {
             if (field.tool == DrawingTool.TEXT && value.tool != DrawingTool.TEXT) {
@@ -92,6 +93,10 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var lastGestureFocusX = 0f
     private var lastGestureFocusY = 0f
     private var isTouchGestureActive = false
+    private var pageSwipePointerId = MotionEvent.INVALID_POINTER_ID
+    private var pageSwipeStartX = 0f
+    private var pageSwipeStartY = 0f
+    private var pageSwipeTracking = false
     private var selection = CanvasSelection()
     private val selectionBounds = RectF()
     private var selectionBeforeTransform: CanvasSelection? = null
@@ -592,7 +597,12 @@ class DrawingCanvasView @JvmOverloads constructor(
         val screenX = event.getX(pointerIndex)
         val screenY = event.getY(pointerIndex)
         val target = textTouchTarget
-        if (textTouchMoved && selectionTransformMode == SelectionTransformMode.MOVE) {
+        if (textTouchMoved && target == null && isHorizontalPageSwipe(
+                textTouchDownScreenX, textTouchDownScreenY, screenX, screenY,
+            )
+        ) {
+            dispatchPageSwipe(textTouchDownScreenX, screenX)
+        } else if (textTouchMoved && selectionTransformMode == SelectionTransformMode.MOVE) {
             updateSelectionTransform(toContentX(screenX), toContentY(screenY))
             val before = selectionBeforeTransform
             if (before != null && before != selection) {
@@ -660,25 +670,60 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun handleTouchGesture(event: MotionEvent, dispatchScaleEvent: Boolean = true): Boolean {
         if (dispatchScaleEvent) scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val actionIndex = event.actionIndex
+                if (event.getToolType(actionIndex) == MotionEvent.TOOL_TYPE_FINGER) {
+                    pageSwipePointerId = event.getPointerId(actionIndex)
+                    pageSwipeStartX = event.getX(actionIndex)
+                    pageSwipeStartY = event.getY(actionIndex)
+                    pageSwipeTracking = true
+                }
+            }
             MotionEvent.ACTION_POINTER_DOWN -> if (event.pointerCount >= 2) {
+                pageSwipeTracking = false
                 val (focusX, focusY) = gestureFocus(event)
                 lastGestureFocusX = focusX
                 lastGestureFocusY = focusY
                 isTouchGestureActive = true
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
-            MotionEvent.ACTION_MOVE -> if (isTouchGestureActive && event.pointerCount >= 2) {
-                val (focusX, focusY) = gestureFocus(event)
-                updateViewport(
-                    viewport.copy(
-                        offsetX = viewport.offsetX + focusX - lastGestureFocusX,
-                        offsetY = viewport.offsetY + focusY - lastGestureFocusY,
-                    ),
-                )
-                lastGestureFocusX = focusX
-                lastGestureFocusY = focusY
+            MotionEvent.ACTION_MOVE -> {
+                if (isTouchGestureActive && event.pointerCount >= 2) {
+                    val (focusX, focusY) = gestureFocus(event)
+                    updateViewport(
+                        viewport.copy(
+                            offsetX = viewport.offsetX + focusX - lastGestureFocusX,
+                            offsetY = viewport.offsetY + focusY - lastGestureFocusY,
+                        ),
+                    )
+                    lastGestureFocusX = focusX
+                    lastGestureFocusY = focusY
+                } else if (pageSwipeTracking) {
+                    val pointerIndex = event.findPointerIndex(pageSwipePointerId)
+                    if (pointerIndex >= 0) {
+                        val dx = event.getX(pointerIndex) - pageSwipeStartX
+                        val dy = event.getY(pointerIndex) - pageSwipeStartY
+                        if (kotlin.math.abs(dx) > touchSlop &&
+                            kotlin.math.abs(dx) > kotlin.math.abs(dy) * PAGE_SWIPE_DIRECTION_RATIO
+                        ) parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                }
             }
-            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
+                val pointerIndex = event.findPointerIndex(pageSwipePointerId)
+                if (pageSwipeTracking && pointerIndex >= 0 && isHorizontalPageSwipe(
+                        pageSwipeStartX,
+                        pageSwipeStartY,
+                        event.getX(pointerIndex),
+                        event.getY(pointerIndex),
+                    )
+                ) dispatchPageSwipe(pageSwipeStartX, event.getX(pointerIndex))
+                resetPageSwipe()
+                isTouchGestureActive = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                resetPageSwipe()
                 if (event.pointerCount <= 2) {
                     isTouchGestureActive = false
                     parent?.requestDisallowInterceptTouchEvent(false)
@@ -686,6 +731,33 @@ class DrawingCanvasView @JvmOverloads constructor(
             }
         }
         return true
+    }
+
+    private fun isHorizontalPageSwipe(
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float,
+    ): Boolean {
+        val dx = endX - startX
+        val dy = endY - startY
+        val minimumDistance = maxOf(
+            touchSlop * PAGE_SWIPE_SLOP_MULTIPLIER,
+            width * PAGE_SWIPE_WIDTH_RATIO,
+        )
+        return kotlin.math.abs(dx) >= minimumDistance &&
+            kotlin.math.abs(dx) > kotlin.math.abs(dy) * PAGE_SWIPE_DIRECTION_RATIO
+    }
+
+    private fun dispatchPageSwipe(startX: Float, endX: Float) {
+        onPageSwipe?.invoke(
+            if (endX < startX) PageSwipeDirection.NEXT else PageSwipeDirection.PREVIOUS,
+        )
+    }
+
+    private fun resetPageSwipe() {
+        pageSwipePointerId = MotionEvent.INVALID_POINTER_ID
+        pageSwipeTracking = false
     }
 
     private fun updateViewport(value: CanvasViewport) {
@@ -1229,6 +1301,9 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val MINIMUM_SCALE = 1f
         const val MAXIMUM_SCALE = 4f
         const val HANDLE_RADIUS_DP = 10f
+        const val PAGE_SWIPE_SLOP_MULTIPLIER = 4
+        const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
+        const val PAGE_SWIPE_DIRECTION_RATIO = 1.25f
     }
 
     private enum class SelectionTransformMode { NONE, MOVE, RESIZE }
@@ -1249,4 +1324,9 @@ class DrawingCanvasView @JvmOverloads constructor(
             return true
         }
     }
+}
+
+enum class PageSwipeDirection {
+    PREVIOUS,
+    NEXT,
 }
