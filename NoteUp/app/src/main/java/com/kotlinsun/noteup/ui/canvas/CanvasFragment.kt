@@ -111,6 +111,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onAreaErased = viewModel::eraseArea
         binding.drawingCanvas.onViewportChanged = viewModel::updateViewport
         binding.drawingCanvas.onTextRequested = ::showNewTextDialog
+        binding.drawingCanvas.onTextEditRequested = ::showEditTextDialog
         binding.drawingCanvas.onSelectionChanged = viewModel::updateSelection
         binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
         setupToolbar()
@@ -455,13 +456,16 @@ class CanvasFragment : Fragment() {
         val hasSelection = state?.hasSelection == true
         val canPaste = state?.canPaste == true
         val isBusy = state?.isBusy != false
+        val selection = drawingCanvas.currentSelection()
+        val hasSingleTextSelection = settings.tool == DrawingTool.TEXT &&
+            selection.texts.size == 1 && selection.strokes.isEmpty()
+        val showSelectionActions = (isLasso && hasSelection) || hasSingleTextSelection
         lassoHint.isVisible = isLasso && !hasSelection
-        copySelectionButton.isVisible = isLasso && hasSelection
-        deleteSelectionButton.isVisible = isLasso && hasSelection
+        copySelectionButton.isVisible = showSelectionActions
+        deleteSelectionButton.isVisible = showSelectionActions
         pasteSelectionButton.isVisible = isLasso && canPaste
-        editTextButton.isVisible = isLasso && hasSelection &&
-            drawingCanvas.currentSelection().texts.size == 1 &&
-            drawingCanvas.currentSelection().strokes.isEmpty()
+        editTextButton.isVisible = (isLasso || settings.tool == DrawingTool.TEXT) &&
+            selection.texts.size == 1 && selection.strokes.isEmpty()
         listOf(copySelectionButton, pasteSelectionButton, deleteSelectionButton, editTextButton)
             .forEach { it.isEnabled = !isBusy }
     }
@@ -631,9 +635,13 @@ class CanvasFragment : Fragment() {
         is CanvasEvent.PendingPersisted -> Unit
         is CanvasEvent.PendingDiscarded -> binding.drawingCanvas.discardPendingStroke(event.token)
         CanvasEvent.RefreshStrokes -> {
-            val strokes = (currentState as? CanvasUiState.Ready)?.strokes.orEmpty()
+            val state = currentState as? CanvasUiState.Ready
+            val strokes = state?.strokes.orEmpty()
+            val texts = state?.texts.orEmpty()
             renderedStrokes = strokes
+            renderedTexts = texts
             binding.drawingCanvas.refreshVisibleStrokes(strokes)
+            binding.drawingCanvas.setTexts(texts)
         }
     }
 
@@ -674,6 +682,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onAreaErased = null
         binding.drawingCanvas.onViewportChanged = null
         binding.drawingCanvas.onTextRequested = null
+        binding.drawingCanvas.onTextEditRequested = null
         binding.drawingCanvas.onSelectionChanged = null
         binding.drawingCanvas.onSelectionTransformed = null
         binding.pageList.adapter = null
