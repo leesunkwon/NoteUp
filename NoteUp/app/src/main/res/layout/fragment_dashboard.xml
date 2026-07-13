@@ -109,6 +109,13 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <androidx.constraintlayout.widget.Barrier
+            android:id="@+id/dashboard_header_bottom"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:barrierDirection="bottom"
+            app:constraint_referenced_ids="content_title,new_note_button" />
+
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/search_input_layout"
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -119,7 +126,7 @@
             app:endIconMode="clear_text"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/new_note_button">
+            app:layout_constraintTop_toBottomOf="@id/dashboard_header_bottom">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/search_input"
