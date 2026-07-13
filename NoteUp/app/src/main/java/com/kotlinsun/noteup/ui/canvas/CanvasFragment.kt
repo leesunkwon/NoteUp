@@ -3,14 +3,16 @@ package com.kotlinsun.noteup.ui.canvas
 import android.app.Activity
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.view.isVisible
-import androidx.core.content.FileProvider
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.widget.PopupMenu
+import androidx.appcompat.widget.TooltipCompat
+import androidx.core.content.FileProvider
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -56,6 +58,7 @@ class CanvasFragment : Fragment() {
     private var currentState: CanvasUiState = CanvasUiState.Loading
     private var presentedArtifactPath: String? = null
     private var savingArtifact = false
+    private var pagePanelOpen = false
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -101,6 +104,7 @@ class CanvasFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        pagePanelOpen = savedInstanceState?.getBoolean(PAGE_PANEL_OPEN_KEY) ?: pagePanelOpen
         binding.backButton.setOnClickListener { findNavController().popBackStack() }
         binding.drawingCanvas.onStrokeCompleted = viewModel::addStroke
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
@@ -111,6 +115,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
         setupToolbar()
         setupPagePanel()
+        binding.pagePanel.isVisible = pagePanelOpen
         observeState()
     }
 
@@ -121,6 +126,7 @@ class CanvasFragment : Fragment() {
             thinButton, mediumButton, thickButton,
             strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
+        configureToolbarAccessibility()
         penToolButton.setOnClickListener { selectDrawingTool(DrawingTool.PEN) }
         highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
@@ -157,15 +163,28 @@ class CanvasFragment : Fragment() {
         previousPageButton.setOnClickListener { viewModel.selectPreviousPage() }
         nextPageButton.setOnClickListener { viewModel.selectNextPage() }
         addPageButton.setOnClickListener { showPageTemplateDialog() }
-        pageListButton.setOnClickListener { pagePanel.isVisible = !pagePanel.isVisible }
-        closePagePanelButton.setOnClickListener { pagePanel.isVisible = false }
+        pageListButton.setOnClickListener {
+            pagePanelOpen = !pagePanel.isVisible
+            pagePanel.isVisible = pagePanelOpen
+        }
+        closePagePanelButton.setOnClickListener {
+            pagePanelOpen = false
+            pagePanel.isVisible = false
+        }
     }
 
     private fun setupPagePanel() = with(binding) {
-        pageList.layoutManager = LinearLayoutManager(requireContext())
+        val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        val orientation = if (isPortrait) RecyclerView.HORIZONTAL else RecyclerView.VERTICAL
+        val dragDirections = if (isPortrait) {
+            ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
+        } else {
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN
+        }
+        pageList.layoutManager = LinearLayoutManager(requireContext(), orientation, false)
         pageList.adapter = pageAdapter
         ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
-            ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0,
+            dragDirections, 0,
         ) {
             override fun onMove(
                 recyclerView: RecyclerView,
@@ -181,6 +200,38 @@ class CanvasFragment : Fragment() {
                 pageAdapter.commitOrder()
             }
         }).attachToRecyclerView(pageList)
+    }
+
+    private fun configureToolbarAccessibility() = with(binding) {
+        listOf(
+            backButton to R.string.back,
+            penToolButton to R.string.pen_tool,
+            highlighterToolButton to R.string.highlighter_tool,
+            eraserToolButton to R.string.eraser_tool,
+            lassoToolButton to R.string.lasso_tool,
+            shapeToolButton to R.string.shape_tool,
+            textToolButton to R.string.text_tool,
+            undoButton to R.string.undo,
+            redoButton to R.string.redo,
+            moreButton to R.string.more,
+        ).forEach { (button, labelRes) -> setToolbarButtonLabel(button, labelRes) }
+    }
+
+    private fun setToolbarButtonLabel(button: MaterialButton, labelRes: Int) {
+        val label = getString(labelRes)
+        button.contentDescription = label
+        TooltipCompat.setTooltipText(button, label)
+    }
+
+    private fun renderShapeToolButton(tool: DrawingTool) {
+        val (iconRes, labelRes) = when (tool) {
+            DrawingTool.LINE -> R.drawable.ic_tool_line to R.string.line_tool
+            DrawingTool.RECTANGLE -> R.drawable.ic_tool_rectangle to R.string.rectangle_tool
+            DrawingTool.CIRCLE -> R.drawable.ic_tool_circle to R.string.circle_tool
+            else -> R.drawable.ic_tool_shape to R.string.shape_tool
+        }
+        binding.shapeToolButton.setIconResource(iconRes)
+        setToolbarButtonLabel(binding.shapeToolButton, labelRes)
     }
 
     private fun observeState() {
@@ -389,14 +440,7 @@ class CanvasFragment : Fragment() {
         lassoToolButton.isChecked = settings.tool == DrawingTool.LASSO
         shapeToolButton.isChecked = settings.tool in SHAPE_TOOLS
         textToolButton.isChecked = settings.tool == DrawingTool.TEXT
-        shapeToolButton.setText(
-            when (settings.tool) {
-                DrawingTool.LINE -> R.string.line_tool
-                DrawingTool.RECTANGLE -> R.string.rectangle_tool
-                DrawingTool.CIRCLE -> R.string.circle_tool
-                else -> R.string.shape_tool
-            },
-        )
+        renderShapeToolButton(settings.tool)
         val showSettings = settings.tool in DRAWING_OPTION_TOOLS
         colorButtons().forEach { it.isVisible = showSettings }
         thicknessButtons().forEach { it.isVisible = showSettings }
@@ -615,7 +659,16 @@ class CanvasFragment : Fragment() {
         super.onStop()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(
+            PAGE_PANEL_OPEN_KEY,
+            _binding?.pagePanel?.isVisible ?: pagePanelOpen,
+        )
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onDestroyView() {
+        pagePanelOpen = binding.pagePanel.isVisible
         binding.drawingCanvas.onStrokeCompleted = null
         binding.drawingCanvas.onStrokesErased = null
         binding.drawingCanvas.onAreaErased = null
@@ -640,6 +693,7 @@ class CanvasFragment : Fragment() {
         const val SHAPE_RECTANGLE_ID = 2
         const val SHAPE_CIRCLE_ID = 3
         const val MORE_EXPORT_ID = 10
+        const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"
         val SHAPE_TOOLS = setOf(DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE)
         val DRAWING_OPTION_TOOLS = setOf(
             DrawingTool.PEN,

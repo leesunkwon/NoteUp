@@ -70,6 +70,24 @@
         <item name="android:insetBottom">0dp</item>
     </style>
 
+    <style name="Widget.NoteUp.Button.IconTool" parent="Widget.NoteUp.Button.Tool">
+        <item name="android:minWidth">@dimen/control_height</item>
+        <item name="android:padding">@dimen/toolbar_icon_padding</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconSize">@dimen/toolbar_icon_size</item>
+        <item name="iconTint">@color/noteup_tool_text</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.IconUtility" parent="Widget.NoteUp.Button.Utility">
+        <item name="android:minWidth">@dimen/control_height</item>
+        <item name="android:padding">@dimen/toolbar_icon_padding</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconSize">@dimen/toolbar_icon_size</item>
+        <item name="iconTint">@color/noteup_control_text</item>
+    </style>
+
     <style name="Widget.NoteUp.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
         <item name="boxBackgroundColor">@color/noteup_soft_cloud</item>
         <item name="boxCornerRadiusTopStart">@dimen/control_corner_radius</item>

@@ -21,12 +21,16 @@
     <dimen name="note_preview_height">150dp</dimen>
     <dimen name="card_corner_radius">0dp</dimen>
     <dimen name="canvas_toolbar_height">64dp</dimen>
+    <dimen name="toolbar_icon_size">24dp</dimen>
+    <dimen name="toolbar_icon_padding">12dp</dimen>
     <dimen name="canvas_context_toolbar_height">56dp</dimen>
     <dimen name="canvas_title_width">144dp</dimen>
     <dimen name="page_navigation_height">64dp</dimen>
     <dimen name="page_indicator_width">80dp</dimen>
     <dimen name="page_panel_width">240dp</dimen>
     <dimen name="page_thumbnail_height">119dp</dimen>
+    <dimen name="page_thumbnail_item_width">228dp</dimen>
+    <dimen name="page_panel_portrait_height">280dp</dimen>
     <dimen name="pen_color_button_size">48dp</dimen>
     <dimen name="pen_color_corner_radius">24dp</dimen>
     <dimen name="pen_selected_stroke_width">3dp</dimen>
