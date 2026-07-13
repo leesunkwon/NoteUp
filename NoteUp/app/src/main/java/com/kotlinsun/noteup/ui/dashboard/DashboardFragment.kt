@@ -8,6 +8,7 @@ import android.widget.PopupMenu
 import androidx.core.os.bundleOf
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -39,6 +40,7 @@ class DashboardFragment : Fragment() {
             application.container.noteRepository,
             application.container.pageThumbnailStore,
             application.container.pageThumbnailService,
+            application.container.trashCleanupService,
         )
     }
 
@@ -68,6 +70,7 @@ class DashboardFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupLists()
         setupActions()
+        binding.searchInput.doAfterTextChanged { viewModel.setSearchQuery(it?.toString().orEmpty()) }
         observeState()
     }
 
@@ -89,6 +92,7 @@ class DashboardFragment : Fragment() {
     private fun setupActions() = with(binding) {
         allNotesButton.setOnClickListener { viewModel.selectAllNotes() }
         unfiledNotesButton.setOnClickListener { viewModel.selectUnfiledNotes() }
+        trashButton.setOnClickListener { viewModel.selectTrash() }
         addNotebookButton.setOnClickListener {
             showNameDialog(
                 titleRes = R.string.create_notebook,
@@ -118,6 +122,7 @@ class DashboardFragment : Fragment() {
                         ).show()
                     }
                 }
+                launch { viewModel.events.collect(::handleEvent) }
             }
         }
     }
@@ -127,9 +132,15 @@ class DashboardFragment : Fragment() {
         notebookAdapter.selectedNotebookId =
             (state.filter as? DashboardFilter.NotebookFilter)?.notebookId
         noteAdapter.submitList(state.notes)
+        if (searchInput.text?.toString() != state.searchQuery) {
+            searchInput.setText(state.searchQuery)
+            searchInput.setSelection(state.searchQuery.length)
+        }
 
         allNotesButton.isActivated = state.filter == DashboardFilter.All
         unfiledNotesButton.isActivated = state.filter == DashboardFilter.Unfiled
+        trashButton.isActivated = state.filter == DashboardFilter.Trash
+        newNoteButton.isVisible = state.filter != DashboardFilter.Trash
         contentTitle.text = when (val filter = state.filter) {
             DashboardFilter.All -> getString(R.string.all_notes)
             DashboardFilter.Unfiled -> getString(R.string.unfiled_notes)
@@ -137,7 +148,23 @@ class DashboardFragment : Fragment() {
                 .firstOrNull { it.id == filter.notebookId }
                 ?.name
                 ?: getString(R.string.all_notes)
+            DashboardFilter.Trash -> getString(R.string.trash)
         }
+        val hasQuery = state.searchQuery.trim().isNotEmpty()
+        emptyStateTitle.setText(
+            when {
+                hasQuery -> R.string.search_empty_title
+                state.filter == DashboardFilter.Trash -> R.string.trash_empty_title
+                else -> R.string.empty_notes_title
+            },
+        )
+        emptyStateDescription.setText(
+            when {
+                hasQuery -> R.string.search_empty_description
+                state.filter == DashboardFilter.Trash -> R.string.trash_empty_description
+                else -> R.string.empty_notes_description
+            },
+        )
         emptyState.isVisible = state.notes.isEmpty()
         noteGrid.isVisible = state.notes.isNotEmpty()
     }
@@ -169,6 +196,19 @@ class DashboardFragment : Fragment() {
 
     private fun showNoteMenu(anchor: View, note: Note) {
         PopupMenu(requireContext(), anchor).apply {
+            if (viewModel.uiState.value.filter == DashboardFilter.Trash) {
+                menu.add(0, MENU_RESTORE, 0, R.string.restore)
+                menu.add(0, MENU_PERMANENT_DELETE, 1, R.string.delete_permanently)
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        MENU_RESTORE -> { viewModel.restoreNote(note.id); true }
+                        MENU_PERMANENT_DELETE -> { confirmPermanentDeletion(note); true }
+                        else -> false
+                    }
+                }
+                show()
+                return@apply
+            }
             menu.add(0, MENU_RENAME, 0, R.string.rename)
             menu.add(0, MENU_MOVE, 1, R.string.move)
             menu.add(0, MENU_DELETE, 2, R.string.delete)
@@ -233,6 +273,25 @@ class DashboardFragment : Fragment() {
             .show()
     }
 
+    private fun confirmPermanentDeletion(note: Note) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.delete_permanently_title)
+            .setMessage(R.string.delete_permanently_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete_permanently) { _, _ ->
+                viewModel.permanentlyDeleteNote(note.id)
+            }
+            .show()
+    }
+
+    private fun handleEvent(event: DashboardEvent) = when (event) {
+        is DashboardEvent.NoteMovedToTrash -> Snackbar.make(
+            binding.root,
+            getString(R.string.note_moved_to_trash, event.title),
+            Snackbar.LENGTH_LONG,
+        ).setAction(R.string.undo_trash) { viewModel.restoreNote(event.noteId) }.show()
+    }
+
     private fun showNameDialog(
         titleRes: Int,
         positiveRes: Int,
@@ -271,6 +330,7 @@ class DashboardFragment : Fragment() {
     }
 
     private fun openNote(note: Note) {
+        if (viewModel.uiState.value.filter == DashboardFilter.Trash) return
         findNavController().navigate(
             R.id.action_dashboard_to_canvas,
             bundleOf(NOTE_ID_ARGUMENT to note.id),
@@ -288,6 +348,8 @@ class DashboardFragment : Fragment() {
         const val MENU_RENAME = 1
         const val MENU_MOVE = 2
         const val MENU_DELETE = 3
+        const val MENU_RESTORE = 4
+        const val MENU_PERMANENT_DELETE = 5
         const val NOTE_ID_ARGUMENT = "noteId"
         const val DEFAULT_GRID_SPAN_COUNT = 3
     }

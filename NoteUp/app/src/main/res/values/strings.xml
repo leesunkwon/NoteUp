@@ -30,7 +30,7 @@
     <string name="delete_notebook_title">노트북을 삭제할까요?</string>
     <string name="delete_notebook_message">노트북 안의 노트는 삭제되지 않고 미분류로 이동합니다.</string>
     <string name="delete_note_title">노트를 삭제할까요?</string>
-    <string name="delete_note_message">노트와 모든 페이지가 기기에서 삭제됩니다.</string>
+    <string name="delete_note_message">노트가 휴지통으로 이동되며 나중에 복구할 수 있습니다.</string>
     <string name="required_name_error">이름을 입력해 주세요.</string>
     <string name="data_operation_error">작업을 완료하지 못했습니다. 다시 시도해 주세요.</string>
     <string name="more_options">더보기</string>
@@ -75,4 +75,22 @@
     <string name="page_preview">페이지 필기 미리보기</string>
     <string name="delete_page_title">페이지 삭제</string>
     <string name="delete_page_message">이 페이지의 필기 내용도 함께 삭제됩니다.</string>
+    <string name="trash">휴지통</string>
+    <string name="search_notes_hint">노트 제목 검색</string>
+    <string name="search_empty_title">검색 결과가 없습니다</string>
+    <string name="search_empty_description">다른 검색어를 입력해 보세요.</string>
+    <string name="trash_empty_title">휴지통이 비어 있습니다</string>
+    <string name="trash_empty_description">삭제한 노트가 여기에 보관됩니다.</string>
+    <string name="restore">복구</string>
+    <string name="delete_permanently">영구 삭제</string>
+    <string name="delete_permanently_title">노트를 영구 삭제할까요?</string>
+    <string name="delete_permanently_message">페이지와 모든 필기가 삭제되며 복구할 수 없습니다.</string>
+    <string name="note_moved_to_trash">%1$s 노트를 휴지통으로 이동했습니다.</string>
+    <string name="undo_trash">실행 취소</string>
+    <string name="deleted_at">삭제 %1$s</string>
+    <string name="trash_retention_title">휴지통 자동 삭제</string>
+    <string name="trash_retention_7_days">7일</string>
+    <string name="trash_retention_30_days">30일</string>
+    <string name="trash_retention_90_days">90일</string>
+    <string name="trash_retention_never">자동 삭제 안 함</string>
 </resources>

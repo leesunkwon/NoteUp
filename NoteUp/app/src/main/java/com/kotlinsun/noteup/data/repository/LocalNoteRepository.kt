@@ -33,14 +33,17 @@ class LocalNoteRepository(
     override fun observeNote(noteId: Long): Flow<Note?> =
         noteDao.observeById(noteId).map { it?.toDomain() }
 
-    override fun observeAllNotes(): Flow<List<Note>> =
-        noteDao.observeAll().map { notes -> notes.map { it.toDomain() } }
+    override fun observeAllNotes(query: String): Flow<List<Note>> =
+        noteDao.observeAll(query).map { notes -> notes.map { it.toDomain() } }
 
-    override fun observeUnfiledNotes(): Flow<List<Note>> =
-        noteDao.observeUnfiled().map { notes -> notes.map { it.toDomain() } }
+    override fun observeUnfiledNotes(query: String): Flow<List<Note>> =
+        noteDao.observeUnfiled(query).map { notes -> notes.map { it.toDomain() } }
 
-    override fun observeNotes(notebookId: Long): Flow<List<Note>> =
-        noteDao.observeByNotebook(notebookId).map { notes -> notes.map { it.toDomain() } }
+    override fun observeNotes(notebookId: Long, query: String): Flow<List<Note>> =
+        noteDao.observeByNotebook(notebookId, query).map { notes -> notes.map { it.toDomain() } }
+
+    override fun observeTrashedNotes(query: String): Flow<List<Note>> =
+        noteDao.observeTrash(query).map { notes -> notes.map { it.toDomain() } }
 
     override fun observePages(noteId: Long): Flow<List<Page>> =
         pageDao.observeByNote(noteId).map { pages -> pages.map { it.toDomain() } }
@@ -102,9 +105,29 @@ class LocalNoteRepository(
         noteDao.move(noteId, notebookId, System.currentTimeMillis())
     }
 
-    override suspend fun deleteNote(noteId: Long) {
-        noteDao.delete(noteId)
+    override suspend fun moveNoteToTrash(noteId: Long) {
+        check(noteDao.moveToTrash(noteId, System.currentTimeMillis()) == 1)
     }
+
+    override suspend fun restoreNote(noteId: Long) {
+        check(noteDao.restore(noteId, System.currentTimeMillis()) == 1)
+    }
+
+    override suspend fun permanentlyDeleteNote(noteId: Long): List<Long> =
+        database.withTransaction {
+            val pageIds = pageDao.getIdsByNoteIds(listOf(noteId))
+            check(noteDao.deleteTrashedByIds(listOf(noteId)) == 1)
+            pageIds
+        }
+
+    override suspend fun purgeExpiredNotes(cutoff: Long): List<Long> =
+        database.withTransaction {
+            val noteIds = noteDao.getExpiredIds(cutoff)
+            if (noteIds.isEmpty()) return@withTransaction emptyList()
+            val pageIds = pageDao.getIdsByNoteIds(noteIds)
+            noteDao.deleteTrashedByIds(noteIds)
+            pageIds
+        }
 
     override suspend fun createPage(noteId: Long, template: PageTemplate): Long =
         database.withTransaction {
@@ -279,6 +302,7 @@ class LocalNoteRepository(
         title = title,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        deletedAt = deletedAt,
     )
 
     private fun PageEntity.toDomain() = Page(

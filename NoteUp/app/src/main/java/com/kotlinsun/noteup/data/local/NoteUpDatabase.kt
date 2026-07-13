@@ -13,7 +13,7 @@ import com.kotlinsun.noteup.data.local.entity.StrokeEntity
 
 @Database(
     entities = [NotebookEntity::class, NoteEntity::class, PageEntity::class, StrokeEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class NoteUpDatabase : RoomDatabase() {

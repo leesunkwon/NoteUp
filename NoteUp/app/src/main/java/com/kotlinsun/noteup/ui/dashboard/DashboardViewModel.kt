@@ -10,7 +10,9 @@ import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
+import com.kotlinsun.noteup.data.trash.TrashCleanupService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,18 +20,28 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class DashboardViewModel(
     private val repository: NoteRepository,
     private val savedStateHandle: SavedStateHandle,
     private val thumbnailStore: PageThumbnailStore,
     private val thumbnailService: PageThumbnailService,
+    private val trashCleanupService: TrashCleanupService,
 ) : ViewModel() {
 
     private val filterType = savedStateHandle.getStateFlow(FILTER_TYPE_KEY, FILTER_ALL)
     private val notebookId = savedStateHandle.getStateFlow(NOTEBOOK_ID_KEY, NO_NOTEBOOK_ID)
+    val searchQuery = savedStateHandle.getStateFlow(SEARCH_QUERY_KEY, "")
+    private val debouncedQuery = searchQuery
+        .debounce(SEARCH_DEBOUNCE_MILLIS)
+        .map { it.trim() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, searchQuery.value.trim())
 
     private val selectedFilter: StateFlow<DashboardFilter> = combine(
         filterType,
@@ -38,6 +50,7 @@ class DashboardViewModel(
         when (type) {
             FILTER_UNFILED -> DashboardFilter.Unfiled
             FILTER_NOTEBOOK -> DashboardFilter.NotebookFilter(id)
+            FILTER_TRASH -> DashboardFilter.Trash
             else -> DashboardFilter.All
         }
     }.stateIn(
@@ -46,13 +59,15 @@ class DashboardViewModel(
         initialValue = DashboardFilter.All,
     )
 
-    private val notes = selectedFilter.flatMapLatest { filter ->
-        when (filter) {
-            DashboardFilter.All -> repository.observeAllNotes()
-            DashboardFilter.Unfiled -> repository.observeUnfiledNotes()
-            is DashboardFilter.NotebookFilter -> repository.observeNotes(filter.notebookId)
+    private val notes = combine(selectedFilter, debouncedQuery) { filter, query -> filter to query }
+        .flatMapLatest { (filter, query) ->
+            when (filter) {
+                DashboardFilter.All -> repository.observeAllNotes(query)
+                DashboardFilter.Unfiled -> repository.observeUnfiledNotes(query)
+                is DashboardFilter.NotebookFilter -> repository.observeNotes(filter.notebookId, query)
+                DashboardFilter.Trash -> repository.observeTrashedNotes(query)
+            }
         }
-    }
 
     private val noteItems = combine(
         notes,
@@ -71,8 +86,15 @@ class DashboardViewModel(
         repository.observeNotebooks(),
         noteItems,
         selectedFilter,
-    ) { notebooks, notes, filter ->
-        DashboardUiState(notebooks = notebooks, notes = notes, filter = filter)
+        searchQuery,
+    ) { notebooks, notes, filter, query ->
+        DashboardUiState(
+            notebooks = notebooks,
+            notes = notes,
+            filter = filter,
+            searchQuery = query,
+            isSearching = query.trim() != debouncedQuery.value,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -81,6 +103,10 @@ class DashboardViewModel(
 
     private val _errors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val errors: Flow<Unit> = _errors
+    private val _events = MutableSharedFlow<DashboardEvent>(extraBufferCapacity = 2)
+    val events: Flow<DashboardEvent> = _events
+
+    init { trashCleanupService.request() }
 
     fun selectAllNotes() {
         updateFilter(FILTER_ALL)
@@ -94,6 +120,10 @@ class DashboardViewModel(
         savedStateHandle[NOTEBOOK_ID_KEY] = notebookId
         updateFilter(FILTER_NOTEBOOK)
     }
+
+    fun selectTrash() = updateFilter(FILTER_TRASH)
+
+    fun setSearchQuery(query: String) { savedStateHandle[SEARCH_QUERY_KEY] = query }
 
     fun createNotebook(name: String) = launchDataOperation {
         repository.createNotebook(name.trim())
@@ -124,9 +154,16 @@ class DashboardViewModel(
     }
 
     fun deleteNote(note: Note) = launchDataOperation {
-        val pages = repository.getPages(note.id)
-        repository.deleteNote(note.id)
-        pages.forEach { runCatching { thumbnailService.delete(it.id) } }
+        repository.moveNoteToTrash(note.id)
+        _events.emit(DashboardEvent.NoteMovedToTrash(note.id, note.title))
+    }
+
+    fun restoreNote(noteId: Long) = launchDataOperation { repository.restoreNote(noteId) }
+
+    fun permanentlyDeleteNote(noteId: Long) = launchDataOperation {
+        repository.permanentlyDeleteNote(noteId).forEach { pageId ->
+            runCatching { thumbnailService.delete(pageId) }
+        }
     }
 
     private fun updateFilter(type: String) {
@@ -140,6 +177,7 @@ class DashboardViewModel(
         FILTER_NOTEBOOK -> DashboardFilter.NotebookFilter(
             savedStateHandle.get<Long>(NOTEBOOK_ID_KEY) ?: NO_NOTEBOOK_ID,
         )
+        FILTER_TRASH -> DashboardFilter.Trash
         else -> DashboardFilter.All
     }
 
@@ -155,6 +193,7 @@ class DashboardViewModel(
         private val repository: NoteRepository,
         private val thumbnailStore: PageThumbnailStore,
         private val thumbnailService: PageThumbnailService,
+        private val trashCleanupService: TrashCleanupService,
     ) : AbstractSavedStateViewModelFactory(owner, null) {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -162,7 +201,7 @@ class DashboardViewModel(
             modelClass: Class<T>,
             handle: SavedStateHandle,
         ): T = DashboardViewModel(
-            repository, handle, thumbnailStore, thumbnailService,
+            repository, handle, thumbnailStore, thumbnailService, trashCleanupService,
         ) as T
     }
 
@@ -173,5 +212,8 @@ class DashboardViewModel(
         const val FILTER_UNFILED = "unfiled"
         const val FILTER_NOTEBOOK = "notebook"
         const val NO_NOTEBOOK_ID = -1L
+        const val FILTER_TRASH = "trash"
+        const val SEARCH_QUERY_KEY = "dashboard_search_query"
+        const val SEARCH_DEBOUNCE_MILLIS = 250L
     }
 }

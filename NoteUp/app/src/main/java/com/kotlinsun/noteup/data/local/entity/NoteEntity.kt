@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL,
         ),
     ],
-    indices = [Index("notebookId")],
+    indices = [Index("notebookId"), Index("deletedAt")],
 )
 data class NoteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -23,4 +23,5 @@ data class NoteEntity(
     val title: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val deletedAt: Long? = null,
 )
