@@ -79,5 +79,5 @@ class PageThumbnailAdapter(
         fun recycle() { job?.cancel(); pageId = null }
     }
 
-    private data class PageListItem(val page: Page, val selected: Boolean, val revision: Long)
+    data class PageListItem(val page: Page, val selected: Boolean, val revision: Long)
 }
