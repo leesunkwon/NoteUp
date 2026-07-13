@@ -1,11 +1,13 @@
 package com.kotlinsun.noteup.ui.dashboard
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import androidx.core.os.bundleOf
+import androidx.core.view.GravityCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
@@ -45,7 +47,10 @@ class DashboardFragment : Fragment() {
     }
 
     private val notebookAdapter = NotebookAdapter(
-        onClick = { viewModel.selectNotebook(it.id) },
+        onClick = {
+            viewModel.selectNotebook(it.id)
+            closeNavigation()
+        },
         onMoreClick = ::showNotebookMenu,
     )
     private val noteAdapter by lazy {
@@ -90,9 +95,21 @@ class DashboardFragment : Fragment() {
     }
 
     private fun setupActions() = with(binding) {
-        allNotesButton.setOnClickListener { viewModel.selectAllNotes() }
-        unfiledNotesButton.setOnClickListener { viewModel.selectUnfiledNotes() }
-        trashButton.setOnClickListener { viewModel.selectTrash() }
+        navigationButton.setOnClickListener {
+            dashboardDrawer.openDrawer(GravityCompat.START)
+        }
+        allNotesButton.setOnClickListener {
+            viewModel.selectAllNotes()
+            closeNavigation()
+        }
+        unfiledNotesButton.setOnClickListener {
+            viewModel.selectUnfiledNotes()
+            closeNavigation()
+        }
+        trashButton.setOnClickListener {
+            viewModel.selectTrash()
+            closeNavigation()
+        }
         addNotebookButton.setOnClickListener {
             showNameDialog(
                 titleRes = R.string.create_notebook,
@@ -106,6 +123,12 @@ class DashboardFragment : Fragment() {
         }
         openSettingsButton.setOnClickListener {
             findNavController().navigate(R.id.action_dashboard_to_settings)
+        }
+    }
+
+    private fun closeNavigation() {
+        if (resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
+            binding.dashboardDrawer.closeDrawer(GravityCompat.START)
         }
     }
 

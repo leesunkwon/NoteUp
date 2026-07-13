@@ -139,8 +139,9 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     fun setViewport(value: CanvasViewport, notify: Boolean = false) {
-        viewport = clampViewport(value)
-        if (notify) onViewportChanged?.invoke(viewport)
+        val remapped = remapViewport(value, width, height)
+        viewport = remapped
+        if (notify || remapped != value) onViewportChanged?.invoke(viewport)
         invalidate()
     }
 
@@ -215,7 +216,9 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
-        viewport = clampViewport(viewport)
+        val previous = viewport
+        viewport = remapViewport(viewport, width, height, oldWidth, oldHeight)
+        if (viewport != previous) onViewportChanged?.invoke(viewport)
         rebuildBoundsCache()
         rebuildStrokeBitmap()
     }
@@ -495,6 +498,42 @@ class DrawingCanvasView @JvmOverloads constructor(
             scale = scale,
             offsetX = value.offsetX.coerceIn(width * (1f - scale), 0f),
             offsetY = value.offsetY.coerceIn(height * (1f - scale), 0f),
+            referenceWidth = width,
+            referenceHeight = height,
+        )
+    }
+
+    private fun remapViewport(
+        value: CanvasViewport,
+        newWidth: Int,
+        newHeight: Int,
+        fallbackWidth: Int = 0,
+        fallbackHeight: Int = 0,
+    ): CanvasViewport {
+        val scale = value.scale.coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
+        if (scale == MINIMUM_SCALE) return CanvasViewport()
+        if (newWidth <= 0 || newHeight <= 0) return value.copy(scale = scale)
+        val oldWidth = value.referenceWidth.takeIf { it > 0 }
+            ?: fallbackWidth.takeIf { it > 0 }
+            ?: newWidth
+        val oldHeight = value.referenceHeight.takeIf { it > 0 }
+            ?: fallbackHeight.takeIf { it > 0 }
+            ?: newHeight
+        if (oldWidth == newWidth && oldHeight == newHeight) {
+            return clampViewport(
+                value.copy(referenceWidth = newWidth, referenceHeight = newHeight),
+            )
+        }
+        val focusX = ((oldWidth / 2f - value.offsetX) / scale / oldWidth).coerceIn(0f, 1f)
+        val focusY = ((oldHeight / 2f - value.offsetY) / scale / oldHeight).coerceIn(0f, 1f)
+        return clampViewport(
+            CanvasViewport(
+                scale = scale,
+                offsetX = newWidth / 2f - focusX * newWidth * scale,
+                offsetY = newHeight / 2f - focusY * newHeight * scale,
+                referenceWidth = newWidth,
+                referenceHeight = newHeight,
+            ),
         )
     }
 

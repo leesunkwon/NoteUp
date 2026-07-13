@@ -9,6 +9,8 @@ data class CanvasViewport(
     val scale: Float = 1f,
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
+    val referenceWidth: Int = 0,
+    val referenceHeight: Int = 0,
 )
 
 sealed interface CanvasUiState {

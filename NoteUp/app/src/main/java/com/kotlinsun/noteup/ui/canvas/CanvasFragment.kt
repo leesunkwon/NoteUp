@@ -3,6 +3,7 @@ package com.kotlinsun.noteup.ui.canvas
 import android.app.Activity
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -56,6 +57,7 @@ class CanvasFragment : Fragment() {
     private var currentState: CanvasUiState = CanvasUiState.Loading
     private var presentedArtifactPath: String? = null
     private var savingArtifact = false
+    private var pagePanelOpen = false
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -101,6 +103,7 @@ class CanvasFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        pagePanelOpen = savedInstanceState?.getBoolean(PAGE_PANEL_OPEN_KEY) ?: pagePanelOpen
         binding.backButton.setOnClickListener { findNavController().popBackStack() }
         binding.drawingCanvas.onStrokeCompleted = viewModel::addStroke
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
@@ -111,6 +114,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
         setupToolbar()
         setupPagePanel()
+        binding.pagePanel.isVisible = pagePanelOpen
         observeState()
     }
 
@@ -157,15 +161,28 @@ class CanvasFragment : Fragment() {
         previousPageButton.setOnClickListener { viewModel.selectPreviousPage() }
         nextPageButton.setOnClickListener { viewModel.selectNextPage() }
         addPageButton.setOnClickListener { showPageTemplateDialog() }
-        pageListButton.setOnClickListener { pagePanel.isVisible = !pagePanel.isVisible }
-        closePagePanelButton.setOnClickListener { pagePanel.isVisible = false }
+        pageListButton.setOnClickListener {
+            pagePanelOpen = !pagePanel.isVisible
+            pagePanel.isVisible = pagePanelOpen
+        }
+        closePagePanelButton.setOnClickListener {
+            pagePanelOpen = false
+            pagePanel.isVisible = false
+        }
     }
 
     private fun setupPagePanel() = with(binding) {
-        pageList.layoutManager = LinearLayoutManager(requireContext())
+        val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        val orientation = if (isPortrait) RecyclerView.HORIZONTAL else RecyclerView.VERTICAL
+        val dragDirections = if (isPortrait) {
+            ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
+        } else {
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN
+        }
+        pageList.layoutManager = LinearLayoutManager(requireContext(), orientation, false)
         pageList.adapter = pageAdapter
         ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
-            ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0,
+            dragDirections, 0,
         ) {
             override fun onMove(
                 recyclerView: RecyclerView,
@@ -615,7 +632,16 @@ class CanvasFragment : Fragment() {
         super.onStop()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(
+            PAGE_PANEL_OPEN_KEY,
+            _binding?.pagePanel?.isVisible ?: pagePanelOpen,
+        )
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onDestroyView() {
+        pagePanelOpen = binding.pagePanel.isVisible
         binding.drawingCanvas.onStrokeCompleted = null
         binding.drawingCanvas.onStrokesErased = null
         binding.drawingCanvas.onAreaErased = null
@@ -640,6 +666,7 @@ class CanvasFragment : Fragment() {
         const val SHAPE_RECTANGLE_ID = 2
         const val SHAPE_CIRCLE_ID = 3
         const val MORE_EXPORT_ID = 10
+        const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"
         val SHAPE_TOOLS = setOf(DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE)
         val DRAWING_OPTION_TOOLS = setOf(
             DrawingTool.PEN,
