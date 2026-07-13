@@ -1,17 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="spacing_small">8dp</dimen>
+    <dimen name="spacing_extra_small">4dp</dimen>
     <dimen name="spacing_medium">16dp</dimen>
     <dimen name="spacing_large">24dp</dimen>
     <dimen name="spacing_extra_large">40dp</dimen>
     <dimen name="screen_content_padding">32dp</dimen>
     <dimen name="text_size_body">16sp</dimen>
     <dimen name="text_size_title">32sp</dimen>
+    <dimen name="text_size_heading">24sp</dimen>
+    <dimen name="text_size_caption">14sp</dimen>
+    <dimen name="text_size_caption_small">12sp</dimen>
+    <dimen name="control_height">48dp</dimen>
+    <dimen name="control_corner_radius">24dp</dimen>
+    <dimen name="hairline_width">1dp</dimen>
+    <dimen name="settings_row_min_height">72dp</dimen>
     <dimen name="sidebar_width">280dp</dimen>
     <dimen name="sidebar_item_height">48dp</dimen>
     <dimen name="note_card_width">220dp</dimen>
     <dimen name="note_preview_height">150dp</dimen>
-    <dimen name="card_corner_radius">16dp</dimen>
+    <dimen name="card_corner_radius">0dp</dimen>
     <dimen name="canvas_toolbar_height">64dp</dimen>
     <dimen name="canvas_context_toolbar_height">56dp</dimen>
     <dimen name="canvas_title_width">144dp</dimen>
@@ -19,8 +27,8 @@
     <dimen name="page_indicator_width">80dp</dimen>
     <dimen name="page_panel_width">240dp</dimen>
     <dimen name="page_thumbnail_height">119dp</dimen>
-    <dimen name="pen_color_button_size">40dp</dimen>
-    <dimen name="pen_color_corner_radius">20dp</dimen>
+    <dimen name="pen_color_button_size">48dp</dimen>
+    <dimen name="pen_color_corner_radius">24dp</dimen>
     <dimen name="pen_selected_stroke_width">3dp</dimen>
     <dimen name="save_status_width">72dp</dimen>
 </resources>

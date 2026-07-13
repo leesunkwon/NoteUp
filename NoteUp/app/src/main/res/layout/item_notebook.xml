@@ -18,7 +18,8 @@
         android:layout_weight="1"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textAppearance="@style/TextAppearance.NoteUp.Body"
+        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+        android:textColor="@color/noteup_navigation_text"
         tools:text="업무 노트" />
 
     <ImageButton
@@ -28,5 +29,6 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/more_options"
         android:padding="12dp"
-        android:src="@drawable/ic_more_vert" />
+        android:src="@drawable/ic_more_vert"
+        android:tint="@color/noteup_navigation_text" />
 </LinearLayout>

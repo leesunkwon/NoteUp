@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_activated="true">
-        <shape><solid android:color="@color/noteup_sidebar_selected" /><corners android:radius="@dimen/card_corner_radius" /></shape>
+        <shape>
+            <solid android:color="@color/noteup_ink" />
+        </shape>
     </item>
     <item>
-        <shape><solid android:color="@color/noteup_surface" /><corners android:radius="@dimen/card_corner_radius" /><stroke android:width="1dp" android:color="@color/noteup_outline" /></shape>
+        <shape>
+            <solid android:color="@color/noteup_canvas" />
+            <stroke android:width="@dimen/hairline_width" android:color="@color/noteup_hairline" />
+        </shape>
     </item>
 </selector>

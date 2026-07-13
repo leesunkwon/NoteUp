@@ -83,7 +83,7 @@ class DashboardFragment : Fragment() {
         noteGrid.adapter = noteAdapter
         noteGrid.doOnLayout {
             val minimumCardWidth = resources.getDimensionPixelSize(R.dimen.note_card_width)
-            val spacing = resources.getDimensionPixelSize(R.dimen.spacing_medium)
+            val spacing = resources.getDimensionPixelSize(R.dimen.spacing_small)
             val spanCount = (noteGrid.width / (minimumCardWidth + spacing)).coerceAtLeast(2)
             gridLayoutManager.spanCount = spanCount
         }

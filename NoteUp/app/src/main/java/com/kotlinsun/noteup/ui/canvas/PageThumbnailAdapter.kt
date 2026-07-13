@@ -64,6 +64,9 @@ class PageThumbnailAdapter(
                 },
             )
             root.isActivated = item.selected
+            pageNumber.isActivated = item.selected
+            pageTemplate.isActivated = item.selected
+            deletePageButton.isActivated = item.selected
             deletePageButton.isEnabled = items.size > 1
             root.setOnClickListener { onClick(item.page) }
             deletePageButton.setOnClickListener { onDelete(item.page) }

@@ -44,7 +44,10 @@ class NotebookAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(notebook: Notebook) = with(binding) {
             notebookName.text = notebook.name
-            notebookItem.isActivated = notebook.id == selectedNotebookId
+            val isSelected = notebook.id == selectedNotebookId
+            notebookItem.isActivated = isSelected
+            notebookName.isActivated = isSelected
+            notebookMoreButton.isActivated = isSelected
             notebookItem.setOnClickListener { onClick(notebook) }
             notebookMoreButton.setOnClickListener { onMoreClick(it, notebook) }
         }

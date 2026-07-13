@@ -3,11 +3,109 @@
     <style name="TextAppearance.NoteUp.Title" parent="TextAppearance.Material3.HeadlineLarge">
         <item name="android:textColor">@color/noteup_on_surface</item>
         <item name="android:textSize">@dimen/text_size_title</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+
+    <style name="TextAppearance.NoteUp.Heading" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textColor">@color/noteup_on_surface</item>
+        <item name="android:textSize">@dimen/text_size_heading</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
     <style name="TextAppearance.NoteUp.Body" parent="TextAppearance.Material3.BodyLarge">
         <item name="android:textColor">@color/noteup_on_surface</item>
         <item name="android:textSize">@dimen/text_size_body</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="TextAppearance.NoteUp.BodyStrong" parent="TextAppearance.NoteUp.Body">
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.NoteUp.Caption" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">@color/noteup_secondary_text</item>
+        <item name="android:textSize">@dimen/text_size_caption</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="TextAppearance.NoteUp.CaptionSmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">@color/noteup_secondary_text</item>
+        <item name="android:textSize">@dimen/text_size_caption_small</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.Primary" parent="Widget.Material3.Button">
+        <item name="android:minHeight">@dimen/control_height</item>
+        <item name="backgroundTint">@color/noteup_ink</item>
+        <item name="android:textColor">@color/noteup_canvas</item>
+        <item name="cornerRadius">@dimen/control_corner_radius</item>
+        <item name="insetTop">0dp</item>
+        <item name="insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.Secondary" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:minHeight">@dimen/control_height</item>
+        <item name="backgroundTint">@color/noteup_soft_cloud</item>
+        <item name="android:textColor">@color/noteup_ink</item>
+        <item name="cornerRadius">@dimen/control_corner_radius</item>
+        <item name="insetTop">0dp</item>
+        <item name="insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.Tool" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">@dimen/control_height</item>
+        <item name="backgroundTint">@color/noteup_tool_background</item>
+        <item name="android:textColor">@color/noteup_tool_text</item>
+        <item name="cornerRadius">@dimen/control_corner_radius</item>
+        <item name="insetTop">0dp</item>
+        <item name="insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.Utility" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">@dimen/control_height</item>
+        <item name="android:textColor">@color/noteup_control_text</item>
+        <item name="cornerRadius">@dimen/control_corner_radius</item>
+        <item name="insetTop">0dp</item>
+        <item name="insetBottom">0dp</item>
+    </style>
+
+    <style name="Widget.NoteUp.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxBackgroundColor">@color/noteup_soft_cloud</item>
+        <item name="boxCornerRadiusTopStart">@dimen/control_corner_radius</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/control_corner_radius</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/control_corner_radius</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/control_corner_radius</item>
+        <item name="boxStrokeColor">@color/noteup_ink</item>
+    </style>
+
+    <style name="ShapeAppearance.NoteUp.Dialog" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">0dp</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.Dialog.Primary" parent="Widget.Material3.Button.TextButton">
+        <item name="backgroundTint">@color/noteup_ink</item>
+        <item name="android:textColor">@color/noteup_canvas</item>
+        <item name="cornerRadius">@dimen/control_corner_radius</item>
+    </style>
+
+    <style name="Widget.NoteUp.Button.Dialog.Secondary" parent="Widget.Material3.Button.TextButton">
+        <item name="backgroundTint">@color/noteup_soft_cloud</item>
+        <item name="android:textColor">@color/noteup_ink</item>
+        <item name="cornerRadius">@dimen/control_corner_radius</item>
+    </style>
+
+    <style name="ThemeOverlay.NoteUp.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/noteup_canvas</item>
+        <item name="colorOnSurface">@color/noteup_ink</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.NoteUp.Button.Dialog.Primary</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.NoteUp.Button.Dialog.Secondary</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.NoteUp.Button.Dialog.Secondary</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.NoteUp.Dialog</item>
+    </style>
+
+    <style name="Widget.NoteUp.Snackbar" parent="Widget.Material3.Snackbar">
+        <item name="backgroundTint">@color/noteup_ink</item>
     </style>
 </resources>
