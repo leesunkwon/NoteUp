@@ -69,6 +69,7 @@
     <string name="zoom_out_symbol">−</string>
     <string name="zoom_in_symbol">+</string>
     <string name="zoom_reset">초기화</string>
+    <string name="zoom_reset_short" formatted="false">100%</string>
     <string name="zoom_percentage">%1$d%%</string>
     <string name="zoom_percentage_default" formatted="false">100%</string>
     <string name="add_page">+ 페이지 추가</string>
