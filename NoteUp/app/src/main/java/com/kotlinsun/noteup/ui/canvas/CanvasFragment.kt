@@ -47,6 +47,8 @@ import com.kotlinsun.noteup.domain.model.ExportArtifact
 import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 class CanvasFragment : Fragment() {
@@ -60,6 +62,9 @@ class CanvasFragment : Fragment() {
     private var presentedArtifactPath: String? = null
     private var savingArtifact = false
     private var pagePanelOpen = false
+    private var pdfRenderJob: Job? = null
+    private var pdfRenderKey: String? = null
+    private var pdfPageLoading = false
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -91,6 +96,8 @@ class CanvasFragment : Fragment() {
             container.pageThumbnailStore,
             container.pageThumbnailService,
             container.noteExportService,
+            container.pdfDocumentStore,
+            container.pdfPageRenderStore,
         )
     }
 
@@ -113,6 +120,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onViewportChanged = { viewport ->
             viewModel.updateViewport(viewport)
             renderZoomControls(viewport.scale)
+            (currentState as? CanvasUiState.Ready)?.let { renderPdfBackground(it.page, viewport.scale) }
         }
         binding.drawingCanvas.onTextRequested = ::showNewTextDialog
         binding.drawingCanvas.onTextEditRequested = ::showEditTextDialog
@@ -287,6 +295,7 @@ class CanvasFragment : Fragment() {
                 state.pages.size,
             )
             pageAdapter.submitPages(state.pages, state.page.id, state.thumbnailRevisions)
+            renderPdfBackground(state.page, state.viewport.scale)
             if (renderedPageId != state.page.id) {
                 renderedPageId = state.page.id
                 renderedStrokes = state.strokes
@@ -677,11 +686,54 @@ class CanvasFragment : Fragment() {
 
     private fun updateInputEnabled() {
         val state = currentState as? CanvasUiState.Ready
-        binding.drawingCanvas.isInputEnabled = state != null && !state.isPageChanging &&
+        binding.drawingCanvas.isInputEnabled = state != null && !pdfPageLoading && !state.isPageChanging &&
             !state.isExporting &&
             !(state.isBusy && currentSettings.tool in setOf(
                 DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
             ))
+    }
+
+    private fun renderPdfBackground(page: Page, scale: Float, force: Boolean = false) {
+        val background = page.pdfBackground
+        if (background == null) {
+            pdfRenderJob?.cancel()
+            pdfRenderJob = null
+            pdfRenderKey = null
+            pdfPageLoading = false
+            binding.drawingCanvas.setPdfBackground(null)
+            updateInputEnabled()
+            return
+        }
+        val baseEdge = maxOf(binding.drawingCanvas.width, binding.drawingCanvas.height, 512)
+        val requestedEdge = ceil(baseEdge * scale / PDF_RENDER_BUCKET).toInt() * PDF_RENDER_BUCKET
+        val key = "${background.storageName}:${background.sourcePageIndex}:$requestedEdge"
+        if (!force && key == pdfRenderKey) return
+        pdfRenderKey = key
+        pdfRenderJob?.cancel()
+        pdfPageLoading = true
+        if (renderedPageId != page.id) binding.drawingCanvas.setPdfBackground(null)
+        updateInputEnabled()
+        pdfRenderJob = viewLifecycleOwner.lifecycleScope.launch {
+            val container = (requireActivity().application as NoteUpApplication).container
+            runCatching { container.pdfPageRenderStore.render(background, requestedEdge) }
+                .onSuccess { bitmap ->
+                    val ready = currentState as? CanvasUiState.Ready
+                    if (ready?.page?.id == page.id && pdfRenderKey == key) {
+                        binding.drawingCanvas.setPdfBackground(bitmap)
+                        pdfPageLoading = false
+                        updateInputEnabled()
+                    }
+                }
+                .onFailure {
+                    if (pdfRenderKey == key) {
+                        pdfPageLoading = true
+                        Snackbar.make(binding.root, R.string.pdf_page_load_error, Snackbar.LENGTH_INDEFINITE)
+                            .setAction(R.string.retry) { renderPdfBackground(page, scale, force = true) }
+                            .show()
+                        updateInputEnabled()
+                    }
+                }
+        }
     }
 
     private fun colorButtons(): List<MaterialButton> = with(binding) {
@@ -706,6 +758,8 @@ class CanvasFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        pdfRenderJob?.cancel()
+        pdfRenderJob = null
         pagePanelOpen = binding.pagePanel.isVisible
         binding.drawingCanvas.onStrokeCompleted = null
         binding.drawingCanvas.onStrokesErased = null
@@ -724,6 +778,7 @@ class CanvasFragment : Fragment() {
     }
 
     private companion object {
+        const val PDF_RENDER_BUCKET = 512f
         const val NOTE_ID_ARGUMENT = "noteId"
         const val INVALID_NOTE_ID = -1L
         const val DEFAULT_TEXT_WIDTH = 0.35f

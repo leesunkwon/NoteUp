@@ -131,4 +131,17 @@
     <string name="share_export">내보낸 파일 공유</string>
     <string name="export_saved">파일을 저장했습니다.</string>
     <string name="export_failed">내보내기를 완료하지 못했습니다.</string>
+    <string name="pdf_import_title">PDF 가져오기</string>
+    <string name="pdf_import_inspecting">PDF 정보를 확인하는 중…</string>
+    <string name="pdf_import_progress">PDF를 NoteUp에 추가하는 중…</string>
+    <string name="pdf_import_confirmation">%1$s\n%2$d페이지를 미분류 노트로 가져올까요?</string>
+    <string name="pdf_import_action">가져오기</string>
+    <string name="pdf_import_failed">PDF를 가져오지 못했습니다</string>
+    <string name="pdf_import_unreadable">파일을 읽을 권한이 없거나 파일에 접근할 수 없습니다.</string>
+    <string name="pdf_import_invalid">올바른 PDF 파일인지 확인해 주세요.</string>
+    <string name="pdf_import_protected">암호로 보호된 PDF는 가져올 수 없습니다.</string>
+    <string name="pdf_import_empty">페이지가 없는 PDF는 가져올 수 없습니다.</string>
+    <string name="pdf_import_storage_error">PDF를 저장하지 못했습니다. 저장 공간을 확인해 주세요.</string>
+    <string name="pdf_page_load_error">PDF 페이지를 표시하지 못했습니다.</string>
+    <string name="retry">재시도</string>
 </resources>

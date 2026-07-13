@@ -43,6 +43,8 @@ class DashboardFragment : Fragment() {
             application.container.pageThumbnailStore,
             application.container.pageThumbnailService,
             application.container.trashCleanupService,
+            application.container.pdfDocumentStore,
+            application.container.pdfPageRenderStore,
         )
     }
 

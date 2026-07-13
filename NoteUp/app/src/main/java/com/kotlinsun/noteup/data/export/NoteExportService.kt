@@ -11,6 +11,7 @@ import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.rendering.PageRenderer
+import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -22,6 +23,7 @@ import kotlinx.coroutines.withContext
 class NoteExportService(
     context: Context,
     private val repository: NoteRepository,
+    private val pdfRenderStore: PdfPageRenderStore,
     private val renderer: PageRenderer = PageRenderer(),
 ) {
     private val applicationContext = context.applicationContext
@@ -48,6 +50,7 @@ class NoteExportService(
                 renderer.draw(
                     Canvas(bitmap), IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_DENSITY,
                     page.templateType, strokes, texts,
+                    page.pdfBackground?.let { pdfRenderStore.render(it, IMAGE_WIDTH) },
                 )
                 FileOutputStream(temporary).use { output ->
                     val compressFormat = if (format == ExportFormat.PNG) {
@@ -103,6 +106,7 @@ class NoteExportService(
                             page.templateType,
                             strokes,
                             texts,
+                            page.pdfBackground?.let { pdfRenderStore.render(it, PDF_WIDTH * 2) },
                         )
                     } finally {
                         pdfPage.canvas.restore()

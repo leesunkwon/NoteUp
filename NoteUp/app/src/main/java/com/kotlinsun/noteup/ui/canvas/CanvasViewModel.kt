@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import android.net.Uri
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.data.export.NoteExportService
+import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
+import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.domain.model.DrawingSettings
@@ -57,6 +59,8 @@ class CanvasViewModel(
     private val thumbnailStore: PageThumbnailStore,
     private val thumbnailService: PageThumbnailService,
     private val exportService: NoteExportService,
+    private val pdfDocumentStore: PdfDocumentStore,
+    private val pdfPageRenderStore: PdfPageRenderStore,
 ) : ViewModel() {
 
     private val operationQueue = Channel<CanvasOperation>(Channel.UNLIMITED)
@@ -533,8 +537,12 @@ class CanvasViewModel(
     }
 
     private suspend fun processDeletePage(pageId: Long, nextPageId: Long?) {
-        repository.deletePage(noteId, pageId)
+        val deleted = repository.deletePage(noteId, pageId)
         runCatching { thumbnailService.delete(pageId) }
+        deleted.pdfStorageNames.forEach { storageName ->
+            pdfPageRenderStore.evict(storageName)
+            pdfDocumentStore.delete(storageName)
+        }
         viewportState.update { it - pageId }
         clearPageSession()
         selectedPageId.value = nextPageId
@@ -801,11 +809,14 @@ class CanvasViewModel(
         private val thumbnailStore: PageThumbnailStore,
         private val thumbnailService: PageThumbnailService,
         private val exportService: NoteExportService,
+        private val pdfDocumentStore: PdfDocumentStore,
+        private val pdfPageRenderStore: PdfPageRenderStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             CanvasViewModel(
                 noteId, repository, settingsStore, thumbnailStore, thumbnailService, exportService,
+                pdfDocumentStore, pdfPageRenderStore,
             ) as T
     }
 }

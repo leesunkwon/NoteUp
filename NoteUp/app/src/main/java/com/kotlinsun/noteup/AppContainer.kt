@@ -12,6 +12,13 @@ import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.data.preferences.TrashRetentionStore
 import com.kotlinsun.noteup.data.trash.TrashCleanupService
 import com.kotlinsun.noteup.data.export.NoteExportService
+import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
+import com.kotlinsun.noteup.data.pdf.PdfImportService
+import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AppContainer(context: Context) {
     private val database = Room.databaseBuilder(
@@ -22,15 +29,27 @@ class AppContainer(context: Context) {
         DatabaseMigrations.MIGRATION_1_2,
         DatabaseMigrations.MIGRATION_2_3,
         DatabaseMigrations.MIGRATION_3_4,
+        DatabaseMigrations.MIGRATION_4_5,
     ).build()
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
+    val pdfDocumentStore = PdfDocumentStore(context)
+    val pdfPageRenderStore = PdfPageRenderStore(pdfDocumentStore)
+    val pdfImportService = PdfImportService(context, noteRepository, pdfDocumentStore)
     val pageThumbnailStore = PageThumbnailStore(context)
-    val pageThumbnailService = PageThumbnailService(noteRepository, pageThumbnailStore)
-    val noteExportService = NoteExportService(context, noteRepository)
+    val pageThumbnailService = PageThumbnailService(
+        noteRepository, pageThumbnailStore, pdfPageRenderStore,
+    )
+    val noteExportService = NoteExportService(context, noteRepository, pdfPageRenderStore)
     val trashRetentionStore = TrashRetentionStore(context)
     val trashCleanupService = TrashCleanupService(
-        noteRepository, trashRetentionStore, pageThumbnailService,
+        noteRepository, trashRetentionStore, pageThumbnailService, pdfDocumentStore, pdfPageRenderStore,
     ).also { it.request() }
     val drawingToolSettingsStore = DrawingToolSettingsStore(context)
+
+    init {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            pdfDocumentStore.cleanupOrphans(noteRepository.getReferencedPdfStorageNames())
+        }
+    }
 }
