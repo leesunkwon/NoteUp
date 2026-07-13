@@ -8,10 +8,13 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
 import com.kotlinsun.noteup.domain.model.EraserMode
+import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.StrokePoint
@@ -30,6 +33,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onStrokeCompleted: ((PendingCanvasStroke) -> Unit)? = null
     var onStrokesErased: ((List<ErasableStroke>) -> Unit)? = null
     var onAreaErased: ((List<AreaEraseReplacement>) -> Unit)? = null
+    var onViewportChanged: ((CanvasViewport) -> Unit)? = null
     var drawingSettings: DrawingSettings = DrawingSettings()
 
     private val renderer = StrokeRenderer()
@@ -38,6 +42,11 @@ class DrawingCanvasView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = resources.displayMetrics.density
     }
+    private val templatePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = context.getColor(R.color.noteup_template_line)
+        strokeWidth = resources.displayMetrics.density
+    }
+    private val scaleDetector = ScaleGestureDetector(context, ScaleListener())
     private val storedStrokes = mutableListOf<Stroke>()
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
     private val erasedInGesture = linkedMapOf<String, ErasableStroke>()
@@ -54,6 +63,37 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var eraserX: Float? = null
     private var eraserY: Float? = null
     private var nextToken = System.nanoTime()
+    private var currentPageId: Long? = null
+    private var pageTemplate = PageTemplate.BLANK
+    private var viewport = CanvasViewport()
+    private var lastGestureFocusX = 0f
+    private var lastGestureFocusY = 0f
+    private var isTouchGestureActive = false
+
+    fun showPage(
+        pageId: Long,
+        template: PageTemplate,
+        strokes: List<Stroke>,
+        viewport: CanvasViewport,
+    ) {
+        if (currentPageId != pageId) {
+            cancelActiveStroke()
+            pendingStrokes.clear()
+            erasedInGesture.clear()
+            eraserPath.clear()
+            areaPreview = emptyList()
+            currentPageId = pageId
+        }
+        pageTemplate = template
+        setViewport(viewport, notify = false)
+        setStrokes(strokes)
+    }
+
+    fun setViewport(value: CanvasViewport, notify: Boolean = false) {
+        viewport = clampViewport(value)
+        if (notify) onViewportChanged?.invoke(viewport)
+        invalidate()
+    }
 
     fun setStrokes(strokes: List<Stroke>) {
         val previousIds = storedStrokes.mapTo(hashSetOf(), Stroke::id)
@@ -110,11 +150,16 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
+        viewport = clampViewport(viewport)
         rebuildStrokeBitmap()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        canvas.save()
+        canvas.translate(viewport.offsetX, viewport.offsetY)
+        canvas.scale(viewport.scale, viewport.scale)
+        drawTemplate(canvas)
         strokeBitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
         val hiddenPendingTokens = areaPreview.mapNotNullTo(hashSetOf()) { replacement ->
             (replacement.target as? ErasableStroke.Pending)?.stroke?.token
@@ -131,10 +176,14 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (cursorX != null && cursorY != null) {
             canvas.drawCircle(cursorX, cursorY, eraserRadiusPx(), eraserPaint)
         }
+        canvas.restore()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isInputEnabled) return false
+        if (activePointerId == MotionEvent.INVALID_POINTER_ID && !containsStylus(event)) {
+            return handleTouchGesture(event)
+        }
         return when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> startInput(event)
             MotionEvent.ACTION_MOVE -> continueInput(event)
@@ -152,10 +201,11 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     private fun startInput(event: MotionEvent): Boolean {
-        if (event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS || width == 0 || height == 0) {
+        val actionIndex = event.actionIndex
+        if (event.getToolType(actionIndex) != MotionEvent.TOOL_TYPE_STYLUS || width == 0 || height == 0) {
             return false
         }
-        activePointerId = event.getPointerId(0)
+        activePointerId = event.getPointerId(actionIndex)
         activeSettings = drawingSettings
         strokeStartedAt = event.eventTime
         activePoints.clear()
@@ -165,14 +215,18 @@ class DrawingCanvasView @JvmOverloads constructor(
             areaPreview = emptyList()
             rebuildStrokeBitmap()
         }
-        lastX = event.x
-        lastY = event.y
-        activeBounds.set(event.x, event.y, event.x, event.y)
+        val screenX = event.getX(actionIndex)
+        val screenY = event.getY(actionIndex)
+        lastX = screenX
+        lastY = screenY
+        activeBounds.set(screenX, screenY, screenX, screenY)
+        val contentX = toContentX(screenX)
+        val contentY = toContentY(screenY)
         if (activeSettings.tool == DrawingTool.ERASER) {
-            eraseAt(event.x, event.y)
+            eraseAt(contentX, contentY)
             updateAreaPreviewIfNeeded()
         } else {
-            addPoint(event.x, event.y, event.pressure, event.eventTime)
+            addPoint(contentX, contentY, event.getPressure(actionIndex), event.eventTime)
         }
         parent?.requestDisallowInterceptTouchEvent(true)
         invalidateDirtySegment(event.x, event.y, event.x, event.y)
@@ -234,8 +288,10 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     private fun appendSample(x: Float, y: Float, pressure: Float, eventTime: Long) {
-        if (activeSettings.tool == DrawingTool.ERASER) eraseAt(x, y)
-        else addPoint(x, y, pressure, eventTime)
+        val contentX = toContentX(x)
+        val contentY = toContentY(y)
+        if (activeSettings.tool == DrawingTool.ERASER) eraseAt(contentX, contentY)
+        else addPoint(contentX, contentY, pressure, eventTime)
         activeBounds.union(x, y)
         invalidateDirtySegment(lastX, lastY, x, y)
         lastX = x
@@ -272,6 +328,70 @@ class DrawingCanvasView @JvmOverloads constructor(
             pendingStrokes.removeAll { pending -> hitPending.any { it.token == pending.token } }
         }
     }
+
+    private fun handleTouchGesture(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> if (event.pointerCount >= 2) {
+                val (focusX, focusY) = gestureFocus(event)
+                lastGestureFocusX = focusX
+                lastGestureFocusY = focusY
+                isTouchGestureActive = true
+                parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_MOVE -> if (isTouchGestureActive && event.pointerCount >= 2) {
+                val (focusX, focusY) = gestureFocus(event)
+                updateViewport(
+                    viewport.copy(
+                        offsetX = viewport.offsetX + focusX - lastGestureFocusX,
+                        offsetY = viewport.offsetY + focusY - lastGestureFocusY,
+                    ),
+                )
+                lastGestureFocusX = focusX
+                lastGestureFocusY = focusY
+            }
+            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (event.pointerCount <= 2) {
+                    isTouchGestureActive = false
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+            }
+        }
+        return true
+    }
+
+    private fun updateViewport(value: CanvasViewport) {
+        viewport = clampViewport(value)
+        onViewportChanged?.invoke(viewport)
+        invalidate()
+    }
+
+    private fun clampViewport(value: CanvasViewport): CanvasViewport {
+        val scale = value.scale.coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
+        if (scale == MINIMUM_SCALE) return CanvasViewport()
+        if (width <= 0 || height <= 0) return value.copy(scale = scale)
+        return CanvasViewport(
+            scale = scale,
+            offsetX = value.offsetX.coerceIn(width * (1f - scale), 0f),
+            offsetY = value.offsetY.coerceIn(height * (1f - scale), 0f),
+        )
+    }
+
+    private fun gestureFocus(event: MotionEvent): Pair<Float, Float> {
+        var x = 0f
+        var y = 0f
+        for (index in 0 until event.pointerCount) {
+            x += event.getX(index)
+            y += event.getY(index)
+        }
+        return x / event.pointerCount to y / event.pointerCount
+    }
+
+    private fun containsStylus(event: MotionEvent): Boolean =
+        (0 until event.pointerCount).any { event.getToolType(it) == MotionEvent.TOOL_TYPE_STYLUS }
+
+    private fun toContentX(screenX: Float) = (screenX - viewport.offsetX) / viewport.scale
+    private fun toContentY(screenY: Float) = (screenY - viewport.offsetY) / viewport.scale
 
     private fun updateAreaPreviewIfNeeded() {
         if (activeSettings.tool != DrawingTool.ERASER ||
@@ -383,6 +503,34 @@ class DrawingCanvasView @JvmOverloads constructor(
         }
     }
 
+    private fun drawTemplate(canvas: Canvas) {
+        canvas.drawColor(context.getColor(R.color.noteup_page))
+        when (pageTemplate) {
+            PageTemplate.BLANK -> Unit
+            PageTemplate.LINED -> {
+                val spacing = LINED_SPACING_DP * resources.displayMetrics.density
+                var y = spacing
+                while (y < height) {
+                    canvas.drawLine(0f, y, width.toFloat(), y, templatePaint)
+                    y += spacing
+                }
+            }
+            PageTemplate.GRID -> {
+                val spacing = GRID_SPACING_DP * resources.displayMetrics.density
+                var x = spacing
+                while (x < width) {
+                    canvas.drawLine(x, 0f, x, height.toFloat(), templatePaint)
+                    x += spacing
+                }
+                var y = spacing
+                while (y < height) {
+                    canvas.drawLine(0f, y, width.toFloat(), y, templatePaint)
+                    y += spacing
+                }
+            }
+        }
+    }
+
     private fun drawStroke(canvas: Canvas, stroke: StrokeDraft) {
         renderer.draw(
             canvas, stroke.points, stroke.colorArgb, stroke.width, width, height,
@@ -394,7 +542,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun dirtyPadding() = maxOf(
         renderer.maximumStrokeWidthPx(resources.displayMetrics.density) / 2f,
         eraserRadiusPx(),
-    ) + 2f
+    ) * viewport.scale + 2f
 
     private fun invalidateDirtySegment(fromX: Float, fromY: Float, toX: Float, toY: Float) {
         val padding = dirtyPadding()
@@ -435,5 +583,26 @@ class DrawingCanvasView @JvmOverloads constructor(
     private companion object {
         const val MINIMUM_POINT_COUNT = 2
         const val ERASER_RADIUS_DP = 12f
+        const val MINIMUM_SCALE = 1f
+        const val MAXIMUM_SCALE = 4f
+        const val LINED_SPACING_DP = 32f
+        const val GRID_SPACING_DP = 24f
+    }
+
+    private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            val oldScale = viewport.scale
+            val newScale = (oldScale * detector.scaleFactor).coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
+            if (newScale == oldScale) return true
+            val ratio = newScale / oldScale
+            updateViewport(
+                CanvasViewport(
+                    scale = newScale,
+                    offsetX = detector.focusX - (detector.focusX - viewport.offsetX) * ratio,
+                    offsetY = detector.focusY - (detector.focusY - viewport.offsetY) * ratio,
+                ),
+            )
+            return true
+        }
     }
 }

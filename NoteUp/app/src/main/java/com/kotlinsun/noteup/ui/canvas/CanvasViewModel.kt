@@ -11,6 +11,8 @@ import com.kotlinsun.noteup.domain.model.HighlighterColor
 import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.PenThickness
+import com.kotlinsun.noteup.domain.model.Page
+import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import java.util.ArrayDeque
@@ -28,7 +30,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,8 +48,11 @@ class CanvasViewModel(
     private val undoStack = ArrayDeque<CanvasCommand>()
     private val redoStack = ArrayDeque<CanvasCommand>()
     private val pendingOperations = MutableStateFlow(0)
+    private val pageCreationInProgress = MutableStateFlow(false)
     private val suppressedStrokeIds = MutableStateFlow<Set<Long>>(emptySet())
     private val historyState = MutableStateFlow(HistoryState())
+    private val selectedPageId = MutableStateFlow<Long?>(null)
+    private val viewportState = MutableStateFlow<Map<Long, CanvasViewport>>(emptyMap())
     private val _settings = MutableStateFlow(settingsStore.load())
     val settings = _settings.asStateFlow()
     private val _errors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -58,19 +62,26 @@ class CanvasViewModel(
 
     private val content = combine(
         repository.observeNote(noteId),
-        repository.observeFirstPage(noteId),
-    ) { note, page -> note to page }
-        .flatMapLatest { (note, page) ->
+        repository.observePages(noteId),
+        selectedPageId,
+    ) { note, pages, requestedPageId ->
+        val page = pages.firstOrNull { it.id == requestedPageId } ?: pages.firstOrNull()
+        Triple(note, pages, page)
+    }.flatMapLatest { (note, pages, page) ->
             if (note == null || page == null) {
                 flowOf<CanvasUiState>(CanvasUiState.NotFound)
             } else {
                 combine(repository.observeStrokes(page.id), suppressedStrokeIds) { strokes, hidden ->
                     CanvasUiState.Ready(
                         note = note,
+                        pages = pages,
                         page = page,
+                        pagePosition = pages.indexOfFirst { it.id == page.id },
                         strokes = strokes.filterNot { it.id in hidden },
+                        viewport = CanvasViewport(),
                         isSaving = false,
                         isBusy = false,
+                        isPageChanging = false,
                         canUndo = false,
                         canRedo = false,
                     )
@@ -78,11 +89,15 @@ class CanvasViewModel(
             }
         }
 
-    val uiState = combine(content, pendingOperations, historyState) { state, pending, history ->
+    val uiState = combine(
+        content, pendingOperations, historyState, viewportState, pageCreationInProgress,
+    ) { state, pending, history, viewports, isPageChanging ->
         if (state is CanvasUiState.Ready) {
             state.copy(
+                viewport = viewports[state.page.id] ?: CanvasViewport(),
                 isSaving = pending > 0,
                 isBusy = pending > 0,
+                isPageChanging = isPageChanging,
                 canUndo = pending == 0 && history.canUndo,
                 canRedo = pending == 0 && history.canRedo,
             )
@@ -97,6 +112,7 @@ class CanvasViewModel(
         persistenceScope.launch {
             for (operation in operationQueue) {
                 processOperation(operation)
+                if (operation is CanvasOperation.CreatePage) pageCreationInProgress.value = false
                 pendingOperations.update { (it - 1).coerceAtLeast(0) }
             }
         }
@@ -142,6 +158,32 @@ class CanvasViewModel(
         if (pendingOperations.value == 0 && historyState.value.canRedo) enqueue(CanvasOperation.Redo)
     }
 
+    fun selectPreviousPage() {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0 || state.pagePosition <= 0) return
+        switchPage(state.pages[state.pagePosition - 1])
+    }
+
+    fun selectNextPage() {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0 || state.pagePosition >= state.pages.lastIndex) return
+        switchPage(state.pages[state.pagePosition + 1])
+    }
+
+    fun createPage(template: PageTemplate) {
+        if (pendingOperations.value == 0) {
+            pageCreationInProgress.value = true
+            if (!enqueue(CanvasOperation.CreatePage(template))) {
+                pageCreationInProgress.value = false
+            }
+        }
+    }
+
+    fun updateViewport(viewport: CanvasViewport) {
+        val pageId = (uiState.value as? CanvasUiState.Ready)?.page?.id ?: return
+        viewportState.update { it + (pageId to viewport) }
+    }
+
     fun selectTool(tool: DrawingTool) = updateSettings(_settings.value.copy(tool = tool))
     fun selectEraserMode(mode: EraserMode) = updateSettings(_settings.value.copy(eraserMode = mode))
     fun selectPenColor(color: PenColor) = updateSettings(
@@ -163,6 +205,7 @@ class CanvasViewModel(
                 is CanvasOperation.Add -> processAdd(operation.stroke, operation.pageId)
                 is CanvasOperation.Erase -> processErase(operation.targets)
                 is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
+                is CanvasOperation.CreatePage -> processCreatePage(operation.template)
                 CanvasOperation.Undo -> processUndo()
                 CanvasOperation.Redo -> processRedo()
             }
@@ -213,6 +256,27 @@ class CanvasViewModel(
         removed.forEach { suppress(it.id) }
         val added = repository.replaceStrokes(noteId, removed, resolved.flatMap { it.second })
         pushNewCommand(CanvasCommand.ReplaceStrokes(removed, added))
+    }
+
+    private suspend fun processCreatePage(template: PageTemplate) {
+        val pageId = repository.createPage(noteId, template)
+        clearPageSession()
+        selectedPageId.value = pageId
+        viewportState.update { it + (pageId to CanvasViewport()) }
+    }
+
+    private fun switchPage(page: Page) {
+        clearPageSession()
+        selectedPageId.value = page.id
+    }
+
+    private fun clearPageSession() {
+        undoStack.clear()
+        redoStack.clear()
+        tokenToStroke.clear()
+        tokensScheduledForErase.clear()
+        suppressedStrokeIds.value = emptySet()
+        publishHistoryState()
     }
 
     private suspend fun processUndo() {
@@ -296,6 +360,7 @@ class CanvasViewModel(
                     }
                 }
             }
+            is CanvasOperation.CreatePage -> Unit
             CanvasOperation.Undo -> rollbackUndo()
             CanvasOperation.Redo -> rollbackRedo()
         }
@@ -333,12 +398,14 @@ class CanvasViewModel(
         suppressedStrokeIds.update { it - strokeId }
     }
 
-    private fun enqueue(operation: CanvasOperation) {
+    private fun enqueue(operation: CanvasOperation): Boolean {
         pendingOperations.update { it + 1 }
-        if (operationQueue.trySend(operation).isFailure) {
+        val result = operationQueue.trySend(operation)
+        if (result.isFailure) {
             pendingOperations.update { (it - 1).coerceAtLeast(0) }
             _errors.tryEmit(Unit)
         }
+        return result.isSuccess
     }
 
     private fun updateSettings(settings: DrawingSettings) {
@@ -359,6 +426,7 @@ class CanvasViewModel(
         data class Add(val stroke: PendingCanvasStroke, val pageId: Long) : CanvasOperation
         data class Erase(val targets: List<ErasableStroke>) : CanvasOperation
         data class AreaErase(val replacements: List<AreaEraseReplacement>) : CanvasOperation
+        data class CreatePage(val template: PageTemplate) : CanvasOperation
         data object Undo : CanvasOperation
         data object Redo : CanvasOperation
     }
