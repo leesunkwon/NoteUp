@@ -50,12 +50,19 @@ class PageThumbnailService(
         val strokes = repository.getStrokes(pageId)
         val texts = repository.getTexts(pageId)
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
-        val pdfBitmap = page.pdfBackground?.let { pdfRenderStore.render(it, WIDTH * 2) }
-        renderer.draw(
-            Canvas(bitmap), WIDTH, HEIGHT, THUMBNAIL_DENSITY, page.templateType, strokes, texts,
-            pdfBitmap,
-        )
-        store.write(pageId, bitmap)
+        val pdfBitmap = page.pdfBackground?.let {
+            pdfRenderStore.renderThumbnail(it, WIDTH * 2)
+        }
+        try {
+            renderer.draw(
+                Canvas(bitmap), WIDTH, HEIGHT, THUMBNAIL_DENSITY,
+                page.templateType, strokes, texts, pdfBitmap,
+            )
+            store.write(pageId, bitmap)
+        } finally {
+            pdfBitmap?.recycle()
+            bitmap.recycle()
+        }
     }
 
     private companion object {

@@ -38,7 +38,7 @@ class PageThumbnailStore(context: Context) {
             temporary.copyTo(target, overwrite = true)
             temporary.delete()
         }
-        memoryCache.put(pageId, bitmap)
+        memoryCache.put(pageId, bitmap.copy(Bitmap.Config.ARGB_8888, false))
         _revisions.update { it + (pageId to System.currentTimeMillis()) }
     }
 

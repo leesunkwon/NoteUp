@@ -46,11 +46,13 @@ class NoteExportService(
         val temporary = File(directory, "$displayName.tmp")
         runCatching {
             val bitmap = Bitmap.createBitmap(IMAGE_WIDTH, IMAGE_HEIGHT, Bitmap.Config.ARGB_8888)
+            val pdfBitmap = page.pdfBackground?.let {
+                pdfRenderStore.renderForExport(it, IMAGE_WIDTH)
+            }
             try {
                 renderer.draw(
                     Canvas(bitmap), IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_DENSITY,
-                    page.templateType, strokes, texts,
-                    page.pdfBackground?.let { pdfRenderStore.render(it, IMAGE_WIDTH) },
+                    page.templateType, strokes, texts, pdfBitmap,
                 )
                 FileOutputStream(temporary).use { output ->
                     val compressFormat = if (format == ExportFormat.PNG) {
@@ -63,6 +65,7 @@ class NoteExportService(
                     output.fd.sync()
                 }
             } finally {
+                pdfBitmap?.recycle()
                 bitmap.recycle()
             }
             replaceAtomically(temporary, destination)
@@ -92,27 +95,34 @@ class NoteExportService(
                 val strokes = repository.getStrokes(page.id)
                 val texts = repository.getTexts(page.id)
                 val info = PdfDocument.PageInfo.Builder(PDF_WIDTH, PDF_HEIGHT, index + 1).create()
-                val pdfPage = document.startPage(info)
+                val backgroundBitmap = page.pdfBackground?.let {
+                    pdfRenderStore.renderForExport(it, PDF_WIDTH * 2)
+                }
                 try {
-                    pdfPage.canvas.drawColor(Color.WHITE)
-                    pdfPage.canvas.save()
+                    val pdfPage = document.startPage(info)
                     try {
-                        pdfPage.canvas.translate(0f, PDF_CONTENT_TOP)
-                        renderer.draw(
-                            pdfPage.canvas,
-                            PDF_WIDTH,
-                            PDF_CONTENT_HEIGHT,
-                            PDF_EXPORT_DENSITY,
-                            page.templateType,
-                            strokes,
-                            texts,
-                            page.pdfBackground?.let { pdfRenderStore.render(it, PDF_WIDTH * 2) },
-                        )
+                        pdfPage.canvas.drawColor(Color.WHITE)
+                        pdfPage.canvas.save()
+                        try {
+                            pdfPage.canvas.translate(0f, PDF_CONTENT_TOP)
+                            renderer.draw(
+                                pdfPage.canvas,
+                                PDF_WIDTH,
+                                PDF_CONTENT_HEIGHT,
+                                PDF_EXPORT_DENSITY,
+                                page.templateType,
+                                strokes,
+                                texts,
+                                backgroundBitmap,
+                            )
+                        } finally {
+                            pdfPage.canvas.restore()
+                        }
                     } finally {
-                        pdfPage.canvas.restore()
+                        document.finishPage(pdfPage)
                     }
                 } finally {
-                    document.finishPage(pdfPage)
+                    backgroundBitmap?.recycle()
                 }
                 onProgress(index + 1, pages.size)
             }
