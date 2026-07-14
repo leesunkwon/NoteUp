@@ -48,6 +48,7 @@ import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -65,6 +66,8 @@ class CanvasFragment : Fragment() {
     private var pdfRenderJob: Job? = null
     private var pdfRenderKey: String? = null
     private var pdfPageLoading = false
+    private var pdfDisplayedPageId: Long? = null
+    private var pdfRenderGeneration = 0L
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -120,7 +123,14 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onViewportChanged = { viewport ->
             viewModel.updateViewport(viewport)
             renderZoomControls(viewport.scale)
-            (currentState as? CanvasUiState.Ready)?.let { renderPdfBackground(it.page, viewport.scale) }
+            (currentState as? CanvasUiState.Ready)?.let {
+                renderPdfBackground(it.page, viewport.scale, debounce = true)
+            }
+        }
+        binding.drawingCanvas.onCanvasSizeChanged = { _, _ ->
+            (currentState as? CanvasUiState.Ready)?.let {
+                renderPdfBackground(it.page, it.viewport.scale, force = true)
+            }
         }
         binding.drawingCanvas.onTextRequested = ::showNewTextDialog
         binding.drawingCanvas.onTextEditRequested = ::showEditTextDialog
@@ -699,43 +709,68 @@ class CanvasFragment : Fragment() {
             ))
     }
 
-    private fun renderPdfBackground(page: Page, scale: Float, force: Boolean = false) {
+    private fun renderPdfBackground(
+        page: Page,
+        scale: Float,
+        force: Boolean = false,
+        debounce: Boolean = false,
+    ) {
         val background = page.pdfBackground
         if (background == null) {
+            pdfRenderGeneration += 1
             pdfRenderJob?.cancel()
             pdfRenderJob = null
             pdfRenderKey = null
             pdfPageLoading = false
+            pdfDisplayedPageId = null
             binding.drawingCanvas.setPdfBackground(null)
             updateInputEnabled()
             return
         }
-        val baseEdge = maxOf(binding.drawingCanvas.width, binding.drawingCanvas.height, 512)
-        val requestedEdge = ceil(baseEdge * scale / PDF_RENDER_BUCKET.toFloat()).toInt() *
+        val canvasWidth = binding.drawingCanvas.width
+        val canvasHeight = binding.drawingCanvas.height
+        val isInitialRender = pdfDisplayedPageId != page.id
+        if (canvasWidth <= 0 || canvasHeight <= 0) {
+            pdfPageLoading = isInitialRender
+            updateInputEnabled()
+            return
+        }
+        val baseEdge = maxOf(canvasWidth, canvasHeight)
+        val requestedEdge = ceil(
+            baseEdge * scale * PDF_RENDER_OVERSAMPLE / PDF_RENDER_BUCKET.toFloat(),
+        ).toInt() *
             PDF_RENDER_BUCKET
-        val key = "${background.storageName}:${background.sourcePageIndex}:$requestedEdge"
+        val key = "${page.id}:${background.storageName}:${background.sourcePageIndex}:" +
+            "${canvasWidth}x$canvasHeight:$requestedEdge"
         if (!force && key == pdfRenderKey) return
         pdfRenderKey = key
+        val generation = ++pdfRenderGeneration
         pdfRenderJob?.cancel()
-        pdfPageLoading = true
-        if (renderedPageId != page.id) binding.drawingCanvas.setPdfBackground(null)
+        pdfPageLoading = isInitialRender
+        if (isInitialRender) binding.drawingCanvas.setPdfBackground(null)
         updateInputEnabled()
         pdfRenderJob = viewLifecycleOwner.lifecycleScope.launch {
+            if (debounce && !isInitialRender) delay(PDF_RENDER_DEBOUNCE_MILLIS)
             val container = (requireActivity().application as NoteUpApplication).container
-            runCatching { container.pdfPageRenderStore.render(background, requestedEdge) }
-                .onSuccess { bitmap ->
+            runCatching { container.pdfPageRenderStore.renderDisplay(background, requestedEdge) }
+                .onSuccess { result ->
                     val ready = currentState as? CanvasUiState.Ready
-                    if (ready?.page?.id == page.id && pdfRenderKey == key) {
-                        binding.drawingCanvas.setPdfBackground(bitmap)
+                    if (ready?.page?.id == page.id && pdfRenderKey == key &&
+                        pdfRenderGeneration == generation
+                    ) {
+                        binding.drawingCanvas.setPdfBackground(result.bitmap)
+                        pdfDisplayedPageId = page.id
                         pdfPageLoading = false
                         updateInputEnabled()
                     }
                 }
                 .onFailure {
-                    if (pdfRenderKey == key) {
-                        pdfPageLoading = true
+                    if (pdfRenderKey == key && pdfRenderGeneration == generation) {
+                        pdfPageLoading = isInitialRender
                         Snackbar.make(binding.root, R.string.pdf_page_load_error, Snackbar.LENGTH_INDEFINITE)
-                            .setAction(R.string.retry) { renderPdfBackground(page, scale, force = true) }
+                            .setAction(R.string.retry) {
+                                renderPdfBackground(page, scale, force = true)
+                            }
                             .show()
                         updateInputEnabled()
                     }
@@ -765,6 +800,9 @@ class CanvasFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        pdfRenderGeneration += 1
+        pdfRenderKey = null
+        pdfDisplayedPageId = null
         pdfRenderJob?.cancel()
         pdfRenderJob = null
         pagePanelOpen = binding.pagePanel.isVisible
@@ -772,6 +810,7 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onStrokesErased = null
         binding.drawingCanvas.onAreaErased = null
         binding.drawingCanvas.onViewportChanged = null
+        binding.drawingCanvas.onCanvasSizeChanged = null
         binding.drawingCanvas.onTextRequested = null
         binding.drawingCanvas.onTextEditRequested = null
         binding.drawingCanvas.onSelectionChanged = null
@@ -787,6 +826,8 @@ class CanvasFragment : Fragment() {
 
     private companion object {
         const val PDF_RENDER_BUCKET = 512
+        const val PDF_RENDER_DEBOUNCE_MILLIS = 120L
+        const val PDF_RENDER_OVERSAMPLE = 1.25f
         const val NOTE_ID_ARGUMENT = "noteId"
         const val INVALID_NOTE_ID = -1L
         const val DEFAULT_TEXT_WIDTH = 0.35f

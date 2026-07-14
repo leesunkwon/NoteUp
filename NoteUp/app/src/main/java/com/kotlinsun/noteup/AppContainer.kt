@@ -34,7 +34,7 @@ class AppContainer(context: Context) {
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
     val pdfDocumentStore = PdfDocumentStore(context)
-    val pdfPageRenderStore = PdfPageRenderStore(pdfDocumentStore)
+    val pdfPageRenderStore = PdfPageRenderStore(context, pdfDocumentStore)
     val pdfImportService = PdfImportService(context, noteRepository, pdfDocumentStore)
     val pageThumbnailStore = PageThumbnailStore(context)
     val pageThumbnailService = PageThumbnailService(

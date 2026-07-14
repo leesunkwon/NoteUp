@@ -40,6 +40,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onStrokesErased: ((List<ErasableStroke>) -> Unit)? = null
     var onAreaErased: ((List<AreaEraseReplacement>) -> Unit)? = null
     var onViewportChanged: ((CanvasViewport) -> Unit)? = null
+    var onCanvasSizeChanged: ((Int, Int) -> Unit)? = null
     var onTextRequested: ((Float, Float) -> Unit)? = null
     var onTextEditRequested: ((CanvasText) -> Unit)? = null
     var onSelectionChanged: ((CanvasSelection) -> Unit)? = null
@@ -289,6 +290,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (viewport != previous) onViewportChanged?.invoke(viewport)
         rebuildBoundsCache()
         rebuildStrokeBitmap()
+        if (width > 0 && height > 0) onCanvasSizeChanged?.invoke(width, height)
     }
 
     override fun onDraw(canvas: Canvas) {
