@@ -58,7 +58,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private val renderer = StrokeRenderer()
     private val textRenderer = CanvasTextRenderer()
     private val eraserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.GRAY
+        color = context.getColor(R.color.noteup_fg_neutral_muted)
         style = Paint.Style.STROKE
         strokeWidth = resources.displayMetrics.density
     }
@@ -1070,11 +1070,13 @@ class DrawingCanvasView @JvmOverloads constructor(
         kotlin.math.hypot(x1 - x2, y1 - y2)
 
     private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(37, 99, 235)
+        color = context.getColor(R.color.noteup_fg_brand)
         style = Paint.Style.STROKE
         strokeWidth = 2f * resources.displayMetrics.density
     }
-    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(37, 99, 235) }
+    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = context.getColor(R.color.noteup_bg_brand)
+    }
 
     private fun addPoint(x: Float, y: Float, pressure: Float, eventTime: Long) {
         activePoints += StrokePoint(

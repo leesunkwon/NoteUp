@@ -5,6 +5,6 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="@color/noteup_ink"
+        android:fillColor="@color/noteup_fg_neutral"
         android:pathData="M3,17.25V21h3.75L18.5,9.25l-3.75,-3.75L3,17.25zM16.16,4.09l3.75,3.75 0.8,-0.8c0.39,-0.39 0.39,-1.02 0,-1.41l-2.34,-2.34a0.996,0.996 0,0 0,-1.41 0l-0.8,0.8zM2,22h12v-2H2v2z" />
 </vector>

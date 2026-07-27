@@ -1,25 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <dimen name="spacing_small">8dp</dimen>
-    <dimen name="spacing_extra_small">4dp</dimen>
-    <dimen name="spacing_medium">16dp</dimen>
-    <dimen name="spacing_large">24dp</dimen>
-    <dimen name="spacing_extra_large">40dp</dimen>
-    <dimen name="screen_content_padding">32dp</dimen>
+    <!-- SEED dimension scale. -->
+    <dimen name="seed_dimension_x0_5">2dp</dimen>
+    <dimen name="seed_dimension_x1">4dp</dimen>
+    <dimen name="seed_dimension_x1_5">6dp</dimen>
+    <dimen name="seed_dimension_x2">8dp</dimen>
+    <dimen name="seed_dimension_x2_5">10dp</dimen>
+    <dimen name="seed_dimension_x3">12dp</dimen>
+    <dimen name="seed_dimension_x3_5">14dp</dimen>
+    <dimen name="seed_dimension_x4">16dp</dimen>
+    <dimen name="seed_dimension_x5">20dp</dimen>
+    <dimen name="seed_dimension_x6">24dp</dimen>
+    <dimen name="seed_dimension_x8">32dp</dimen>
+    <dimen name="seed_dimension_x10">40dp</dimen>
+    <dimen name="seed_dimension_x12">48dp</dimen>
+    <dimen name="seed_dimension_x14">56dp</dimen>
+    <dimen name="seed_dimension_x16">64dp</dimen>
+
+    <dimen name="seed_radius_r0_5">2dp</dimen>
+    <dimen name="seed_radius_r1">4dp</dimen>
+    <dimen name="seed_radius_r1_5">6dp</dimen>
+    <dimen name="seed_radius_r2">8dp</dimen>
+    <dimen name="seed_radius_r3">12dp</dimen>
+    <dimen name="seed_radius_r4">16dp</dimen>
+    <dimen name="seed_radius_r5">20dp</dimen>
+    <dimen name="seed_radius_r6">24dp</dimen>
+    <dimen name="seed_radius_full">999dp</dimen>
+
+    <!-- Semantic spacing. -->
+    <dimen name="spacing_extra_small">@dimen/seed_dimension_x1</dimen>
+    <dimen name="spacing_small">@dimen/seed_dimension_x2</dimen>
+    <dimen name="spacing_medium">@dimen/seed_dimension_x4</dimen>
+    <dimen name="spacing_large">@dimen/seed_dimension_x6</dimen>
+    <dimen name="spacing_extra_large">@dimen/seed_dimension_x10</dimen>
+    <dimen name="screen_content_padding">@dimen/seed_dimension_x8</dimen>
+    <dimen name="screen_global_gutter">@dimen/seed_dimension_x4</dimen>
+    <dimen name="component_vertical_gap">@dimen/seed_dimension_x3</dimen>
+
+    <!-- SEED-inspired semantic typography scale. -->
+    <dimen name="text_size_screen_title">28sp</dimen>
+    <dimen name="text_size_section_title">22sp</dimen>
     <dimen name="text_size_body">16sp</dimen>
-    <dimen name="text_size_title">32sp</dimen>
-    <dimen name="text_size_heading">24sp</dimen>
-    <dimen name="text_size_caption">14sp</dimen>
+    <dimen name="text_size_label">14sp</dimen>
+    <dimen name="text_size_caption">13sp</dimen>
     <dimen name="text_size_caption_small">12sp</dimen>
+    <dimen name="text_size_title">@dimen/text_size_screen_title</dimen>
+    <dimen name="text_size_heading">@dimen/text_size_section_title</dimen>
+
     <dimen name="control_height">48dp</dimen>
-    <dimen name="control_corner_radius">24dp</dimen>
+    <dimen name="control_corner_radius">@dimen/seed_radius_r2</dimen>
+    <dimen name="chip_corner_radius">@dimen/seed_radius_full</dimen>
     <dimen name="hairline_width">1dp</dimen>
+    <dimen name="focus_stroke_width">2dp</dimen>
     <dimen name="settings_row_min_height">72dp</dimen>
     <dimen name="sidebar_width">280dp</dimen>
     <dimen name="sidebar_item_height">48dp</dimen>
     <dimen name="note_card_width">220dp</dimen>
     <dimen name="note_preview_height">150dp</dimen>
-    <dimen name="card_corner_radius">0dp</dimen>
+    <dimen name="card_corner_radius">@dimen/seed_radius_r3</dimen>
     <dimen name="canvas_toolbar_height">64dp</dimen>
     <dimen name="toolbar_icon_size">24dp</dimen>
     <dimen name="toolbar_icon_padding">12dp</dimen>
@@ -28,8 +66,8 @@
     <dimen name="page_navigation_height">64dp</dimen>
     <dimen name="page_indicator_width">80dp</dimen>
     <dimen name="zoom_percentage_width">56dp</dimen>
-    <dimen name="zoom_floating_corner_radius">28dp</dimen>
-    <dimen name="page_panel_width">240dp</dimen>
+    <dimen name="zoom_floating_corner_radius">@dimen/seed_radius_full</dimen>
+    <dimen name="page_panel_width">248dp</dimen>
     <dimen name="page_thumbnail_height">119dp</dimen>
     <dimen name="page_thumbnail_item_width">228dp</dimen>
     <dimen name="page_panel_portrait_height">280dp</dimen>

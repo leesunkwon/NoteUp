@@ -3,12 +3,12 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="@dimen/page_thumbnail_item_width"
     android:layout_height="wrap_content"
-    android:layout_margin="@dimen/spacing_small"
+    android:layout_margin="@dimen/seed_dimension_x1_5"
     android:background="@drawable/bg_page_thumbnail_item"
     android:clickable="true"
     android:focusable="true"
     android:orientation="vertical"
-    android:padding="@dimen/spacing_small">
+    android:padding="@dimen/seed_dimension_x2_5">
 
     <ImageView
         android:id="@+id/page_preview"
@@ -21,6 +21,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/seed_dimension_x1_5"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -47,6 +48,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/delete"
-            android:textColor="@color/noteup_page_item_text" />
+            android:textColor="@color/noteup_critical_text" />
     </LinearLayout>
 </LinearLayout>

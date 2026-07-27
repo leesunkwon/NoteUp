@@ -2,13 +2,23 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_activated="true">
         <shape>
-            <solid android:color="@color/noteup_ink" />
+            <corners android:radius="@dimen/seed_radius_r3" />
+            <solid android:color="@color/noteup_bg_brand_weak" />
+            <stroke android:width="@dimen/focus_stroke_width" android:color="@color/noteup_stroke_brand" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape>
+            <corners android:radius="@dimen/seed_radius_r3" />
+            <solid android:color="@color/noteup_bg_neutral_pressed" />
+            <stroke android:width="@dimen/hairline_width" android:color="@color/noteup_stroke_neutral_weak" />
         </shape>
     </item>
     <item>
         <shape>
-            <solid android:color="@color/noteup_canvas" />
-            <stroke android:width="@dimen/hairline_width" android:color="@color/noteup_hairline" />
+            <corners android:radius="@dimen/seed_radius_r3" />
+            <solid android:color="@color/noteup_bg_layer_default" />
+            <stroke android:width="@dimen/hairline_width" android:color="@color/noteup_stroke_neutral_weak" />
         </shape>
     </item>
 </selector>

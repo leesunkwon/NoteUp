@@ -24,11 +24,11 @@
 
     <ImageButton
         android:id="@+id/notebook_more_button"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="@dimen/control_height"
+        android:layout_height="@dimen/control_height"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/more_options"
-        android:padding="12dp"
+        android:padding="@dimen/seed_dimension_x3"
         android:src="@drawable/ic_more_vert"
         android:tint="@color/noteup_navigation_text" />
 </LinearLayout>

@@ -2,13 +2,19 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_activated="true">
         <shape>
-            <corners android:radius="@dimen/control_corner_radius" />
-            <solid android:color="@color/noteup_sidebar_selected" />
+            <corners android:radius="@dimen/seed_radius_r2" />
+            <solid android:color="@color/noteup_bg_brand_weak" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape>
+            <corners android:radius="@dimen/seed_radius_r2" />
+            <solid android:color="@color/noteup_bg_neutral_pressed" />
         </shape>
     </item>
     <item>
         <shape>
-            <corners android:radius="@dimen/control_corner_radius" />
+            <corners android:radius="@dimen/seed_radius_r2" />
             <solid android:color="@android:color/transparent" />
         </shape>
     </item>

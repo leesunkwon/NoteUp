@@ -7,7 +7,7 @@
     <path
         android:fillColor="@android:color/transparent"
         android:pathData="M5,19L19,5"
-        android:strokeColor="@color/noteup_ink"
+        android:strokeColor="@color/noteup_fg_neutral"
         android:strokeLineCap="round"
         android:strokeWidth="2" />
 </vector>
