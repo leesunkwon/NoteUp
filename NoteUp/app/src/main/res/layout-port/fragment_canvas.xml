@@ -64,7 +64,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
-            android:minHeight="@dimen/canvas_context_toolbar_height"
+            android:minHeight="@dimen/canvas_tool_row_height"
             android:orientation="horizontal"
             android:paddingHorizontal="@dimen/spacing_medium">
 
@@ -123,6 +123,58 @@
                         android:layout_width="@dimen/control_height"
                         android:layout_height="@dimen/control_height"
                         app:icon="@drawable/ic_tool_text" />
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/tool_settings_button"
+                        android:layout_width="@dimen/control_height"
+                        android:layout_height="@dimen/control_height"
+                        android:layout_marginStart="@dimen/spacing_extra_small"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:foreground="?attr/selectableItemBackgroundBorderless"
+                        app:cardBackgroundColor="@color/noteup_bg_neutral_weak"
+                        app:cardCornerRadius="@dimen/chip_corner_radius"
+                        app:cardElevation="0dp"
+                        app:strokeColor="@color/noteup_stroke_neutral_weak"
+                        app:strokeWidth="@dimen/hairline_width">
+
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:padding="@dimen/spacing_small">
+
+                            <LinearLayout
+                                android:id="@+id/current_style_preview"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:gravity="center"
+                                android:orientation="horizontal">
+
+                                <View
+                                    android:id="@+id/current_color_swatch"
+                                    android:layout_width="@dimen/tool_current_swatch_size"
+                                    android:layout_height="@dimen/tool_current_swatch_size"
+                                    android:background="@drawable/bg_tool_swatch" />
+
+                                <View
+                                    android:id="@+id/current_thickness_preview"
+                                    android:layout_width="@dimen/tool_current_line_width"
+                                    android:layout_height="@dimen/tool_preview_medium"
+                                    android:layout_marginStart="@dimen/spacing_extra_small"
+                                    android:background="@drawable/bg_tool_line_preview" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/current_tool_setting_icon"
+                                android:layout_width="@dimen/toolbar_icon_size"
+                                android:layout_height="@dimen/toolbar_icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_tool_eraser"
+                                android:visibility="gone"
+                                app:tint="@color/noteup_control_text" />
+                        </FrameLayout>
+                    </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
             </HorizontalScrollView>
 
@@ -144,170 +196,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <HorizontalScrollView
-        android:id="@+id/context_toolbar"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar"
-        android:fillViewport="true"
-        android:minHeight="@dimen/canvas_context_toolbar_height"
-        android:scrollbars="none"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="@dimen/spacing_large">
-
-            <TextView
-                android:id="@+id/lasso_hint"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/lasso_select_hint"
-                android:textColor="@color/noteup_fg_neutral_subtle"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/edit_text_button"
-                style="@style/Widget.NoteUp.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/edit_text"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/copy_selection_button"
-                style="@style/Widget.NoteUp.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/copy_selection"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/paste_selection_button"
-                style="@style/Widget.NoteUp.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/paste_selection"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/delete_selection_button"
-                style="@style/Widget.NoteUp.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/delete_selection"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/black_color_button"
-                android:layout_width="@dimen/pen_color_button_size"
-                android:layout_height="@dimen/pen_color_button_size"
-                android:layout_marginStart="@dimen/spacing_small"
-                android:contentDescription="@string/pen_color_black"
-                android:insetLeft="0dp"
-                android:insetTop="0dp"
-                android:insetRight="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"
-                app:backgroundTint="@color/pen_black"
-                app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_stroke_brand" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/blue_color_button"
-                android:layout_width="@dimen/pen_color_button_size"
-                android:layout_height="@dimen/pen_color_button_size"
-                android:layout_marginStart="@dimen/spacing_small"
-                android:contentDescription="@string/pen_color_blue"
-                android:insetLeft="0dp"
-                android:insetTop="0dp"
-                android:insetRight="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"
-                app:backgroundTint="@color/pen_blue"
-                app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_stroke_brand" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/red_color_button"
-                android:layout_width="@dimen/pen_color_button_size"
-                android:layout_height="@dimen/pen_color_button_size"
-                android:layout_marginStart="@dimen/spacing_small"
-                android:contentDescription="@string/pen_color_red"
-                android:insetLeft="0dp"
-                android:insetTop="0dp"
-                android:insetRight="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"
-                app:backgroundTint="@color/pen_red"
-                app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_stroke_brand" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/green_color_button"
-                android:layout_width="@dimen/pen_color_button_size"
-                android:layout_height="@dimen/pen_color_button_size"
-                android:layout_marginStart="@dimen/spacing_small"
-                android:contentDescription="@string/pen_color_green"
-                android:insetLeft="0dp"
-                android:insetTop="0dp"
-                android:insetRight="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"
-                app:backgroundTint="@color/pen_green"
-                app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_stroke_brand" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/stroke_eraser_mode_button"
-                style="@style/Widget.NoteUp.Button.Tool"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/spacing_small"
-                android:text="@string/stroke_eraser_mode"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/area_eraser_mode_button"
-                style="@style/Widget.NoteUp.Button.Tool"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/area_eraser_mode"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/thin_button"
-                style="@style/Widget.NoteUp.Button.Tool"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/spacing_small"
-                android:text="@string/pen_thin" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/medium_button"
-                style="@style/Widget.NoteUp.Button.Tool"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/pen_medium" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/thick_button"
-                style="@style/Widget.NoteUp.Button.Tool"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/pen_thick" />
-        </LinearLayout>
-    </HorizontalScrollView>
-
     <com.kotlinsun.noteup.ui.canvas.DrawingCanvasView
         android:id="@+id/drawing_canvas"
         android:layout_width="0dp"
@@ -317,7 +205,61 @@
         app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/context_toolbar" />
+        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/selection_actions_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/noteup_bg_layer_default"
+        app:cardCornerRadius="@dimen/chip_corner_radius"
+        app:cardElevation="@dimen/tool_popup_elevation"
+        app:layout_constraintStart_toStartOf="@id/drawing_canvas"
+        app:layout_constraintTop_toTopOf="@id/drawing_canvas"
+        app:strokeColor="@color/noteup_stroke_neutral_weak"
+        app:strokeWidth="@dimen/hairline_width">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/spacing_extra_small">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/edit_text_button"
+                style="@style/Widget.NoteUp.Button.Utility"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_text"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/copy_selection_button"
+                style="@style/Widget.NoteUp.Button.Utility"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/copy_selection"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/paste_selection_button"
+                style="@style/Widget.NoteUp.Button.Utility"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/paste_selection"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/delete_selection_button"
+                style="@style/Widget.NoteUp.Button.Utility"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/delete_selection"
+                android:visibility="gone" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/page_navigation_bar"

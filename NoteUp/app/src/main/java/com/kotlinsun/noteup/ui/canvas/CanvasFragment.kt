@@ -5,12 +5,15 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupWindow
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.PopupMenu
@@ -18,6 +21,7 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.FileProvider
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -36,6 +40,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
+import com.kotlinsun.noteup.databinding.PopupToolSettingsBinding
 import com.kotlinsun.noteup.domain.model.AppSettings
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
@@ -78,6 +83,8 @@ class CanvasFragment : Fragment() {
     private var pdfDisplayedPageId: Long? = null
     private var pdfRenderGeneration = 0L
     private var currentZoomScale = MIN_ZOOM
+    private var toolSettingsPopup: PopupWindow? = null
+    private var toolSettingsBinding: PopupToolSettingsBinding? = null
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -141,11 +148,13 @@ class CanvasFragment : Fragment() {
         binding.drawingCanvas.onViewportChanged = { viewport ->
             viewModel.updateViewport(viewport)
             renderZoomControls(viewport.scale)
+            positionSelectionActions()
             (currentState as? CanvasUiState.Ready)?.let {
                 renderPdfBackground(it.page, viewport.scale, debounce = true)
             }
         }
         binding.drawingCanvas.onCanvasSizeChanged = { _, _ ->
+            positionSelectionActions()
             (currentState as? CanvasUiState.Ready)?.let {
                 renderPdfBackground(it.page, it.viewport.scale, force = true)
             }
@@ -171,18 +180,18 @@ class CanvasFragment : Fragment() {
         listOf(
             penToolButton, highlighterToolButton, eraserToolButton, lassoToolButton,
             shapeToolButton, textToolButton,
-            thinButton, mediumButton, thickButton,
-            strokeEraserModeButton, areaEraserModeButton,
         ).forEach { it.isCheckable = true }
         configureToolbarAccessibility()
         TooltipCompat.setTooltipText(zoomOutButton, getString(R.string.zoom_out))
         TooltipCompat.setTooltipText(zoomInButton, getString(R.string.zoom_in))
-        penToolButton.setOnClickListener { selectDrawingTool(DrawingTool.PEN) }
-        highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
-        eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
+        penToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.PEN) }
+        highlighterToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.HIGHLIGHTER) }
+        eraserToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.ERASER) }
         lassoToolButton.setOnClickListener { selectDrawingTool(DrawingTool.LASSO) }
-        shapeToolButton.setOnClickListener { showShapeMenu() }
-        textToolButton.setOnClickListener { selectDrawingTool(DrawingTool.TEXT) }
+        shapeToolButton.setOnClickListener { handleShapeToolClick() }
+        textToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.TEXT) }
+        toolSettingsButton.setOnClickListener { showToolSettingsPopup() }
+        TooltipCompat.setTooltipText(toolSettingsButton, getString(R.string.tool_settings))
         moreButton.setOnClickListener { showMoreMenu() }
         copySelectionButton.setOnClickListener { viewModel.copySelection() }
         pasteSelectionButton.setOnClickListener {
@@ -198,21 +207,6 @@ class CanvasFragment : Fragment() {
         editTextButton.setOnClickListener {
             drawingCanvas.currentSelection().texts.singleOrNull()?.let(::showEditTextDialog)
         }
-        strokeEraserModeButton.setOnClickListener {
-            viewModel.selectEraserMode(EraserMode.STROKE)
-            performHapticFeedback()
-        }
-        areaEraserModeButton.setOnClickListener {
-            viewModel.selectEraserMode(EraserMode.AREA)
-            performHapticFeedback()
-        }
-        blackColorButton.setOnClickListener { selectColorSlot(0) }
-        blueColorButton.setOnClickListener { selectColorSlot(1) }
-        redColorButton.setOnClickListener { selectColorSlot(2) }
-        greenColorButton.setOnClickListener { selectColorSlot(3) }
-        thinButton.setOnClickListener { selectThicknessSlot(0) }
-        mediumButton.setOnClickListener { selectThicknessSlot(1) }
-        thickButton.setOnClickListener { selectThicknessSlot(2) }
         undoButton.setOnClickListener { viewModel.undo(); performHapticFeedback() }
         redoButton.setOnClickListener { viewModel.redo(); performHapticFeedback() }
         previousPageButton.setOnClickListener {
@@ -287,6 +281,7 @@ class CanvasFragment : Fragment() {
             zoomResetButton to R.string.zoom_reset,
             zoomInButton to R.string.zoom_in,
         ).forEach { (button, labelRes) -> setToolbarButtonLabel(button, labelRes) }
+        toolSettingsButton.contentDescription = getString(R.string.tool_settings)
         ViewCompat.setAccessibilityLiveRegion(
             saveStatus,
             ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE,
@@ -367,6 +362,7 @@ class CanvasFragment : Fragment() {
             pageAdapter.submitPages(state.pages, state.page.id, state.thumbnailRevisions)
             renderPdfBackground(state.page, state.viewport.scale)
             if (renderedPageId != state.page.id) {
+                dismissToolSettingsPopup()
                 renderedPageId = state.page.id
                 renderedStrokes = state.strokes
                 renderedTexts = state.texts
@@ -431,23 +427,111 @@ class CanvasFragment : Fragment() {
         renderCanvasAccessibility()
     }
 
-    private fun showShapeMenu() {
-        PopupMenu(requireContext(), binding.shapeToolButton).apply {
-            menu.add(0, SHAPE_LINE_ID, 0, R.string.line_tool)
-            menu.add(0, SHAPE_RECTANGLE_ID, 1, R.string.rectangle_tool)
-            menu.add(0, SHAPE_CIRCLE_ID, 2, R.string.circle_tool)
-            setOnMenuItemClickListener { item ->
-                val tool = when (item.itemId) {
-                    SHAPE_LINE_ID -> DrawingTool.LINE
-                    SHAPE_RECTANGLE_ID -> DrawingTool.RECTANGLE
-                    SHAPE_CIRCLE_ID -> DrawingTool.CIRCLE
-                    else -> return@setOnMenuItemClickListener false
-                }
-                selectDrawingTool(tool)
-                true
-            }
-            show()
+    private fun handleToolButtonClick(tool: DrawingTool) {
+        if (currentSettings.tool == tool) {
+            showToolSettingsPopup()
+        } else {
+            dismissToolSettingsPopup()
+            selectDrawingTool(tool)
         }
+    }
+
+    private fun handleShapeToolClick() {
+        if (currentSettings.tool in SHAPE_TOOLS) {
+            showToolSettingsPopup()
+        } else {
+            selectDrawingTool(DrawingTool.LINE)
+            binding.shapeToolButton.post { showToolSettingsPopup() }
+        }
+    }
+
+    private fun showToolSettingsPopup() {
+        if (currentSettings.tool !in TOOL_SETTINGS_TOOLS) return
+        if (toolSettingsPopup?.isShowing == true) {
+            dismissToolSettingsPopup()
+            return
+        }
+        val panel = PopupToolSettingsBinding.inflate(layoutInflater)
+        setupToolSettingsPanel(panel)
+        renderToolSettingsPanel(panel, currentSettings)
+        val popupWidth = resources.getDimensionPixelSize(R.dimen.tool_popup_width)
+        val popup = PopupWindow(
+            panel.root,
+            popupWidth,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true,
+        ).apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            isOutsideTouchable = true
+            elevation = resources.getDimension(R.dimen.tool_popup_elevation)
+            setOnDismissListener {
+                toolSettingsBinding = null
+                toolSettingsPopup = null
+            }
+        }
+        toolSettingsBinding = panel
+        toolSettingsPopup = popup
+        val anchor = binding.toolSettingsButton
+        val anchorLocation = IntArray(2)
+        val rootLocation = IntArray(2)
+        anchor.getLocationInWindow(anchorLocation)
+        binding.root.getLocationInWindow(rootLocation)
+        val anchorX = anchorLocation[0] - rootLocation[0]
+        val rootWidth = binding.root.width
+        val horizontalMargin = resources.getDimensionPixelSize(R.dimen.spacing_small)
+        val desiredX = (anchorX + anchor.width / 2f - popupWidth / 2f)
+            .roundToInt()
+            .coerceIn(horizontalMargin, (rootWidth - popupWidth - horizontalMargin).coerceAtLeast(horizontalMargin))
+        val xOffset = desiredX - anchorX
+        val yOffset = resources.getDimensionPixelSize(R.dimen.tool_popup_vertical_offset)
+        popup.showAsDropDown(anchor, xOffset, yOffset)
+    }
+
+    private fun setupToolSettingsPanel(panel: PopupToolSettingsBinding) = with(panel) {
+        val checkableButtons = listOf(
+            blackColorButton,
+            blueColorButton,
+            redColorButton,
+            greenColorButton,
+            thinButton,
+            mediumButton,
+            thickButton,
+            strokeEraserModeButton,
+            areaEraserModeButton,
+            lineShapeButton,
+            rectangleShapeButton,
+            circleShapeButton,
+        )
+        checkableButtons.forEach { it.isCheckable = true }
+        blackColorButton.setOnClickListener { selectColorSlot(0) }
+        blueColorButton.setOnClickListener { selectColorSlot(1) }
+        redColorButton.setOnClickListener { selectColorSlot(2) }
+        greenColorButton.setOnClickListener { selectColorSlot(3) }
+        thinButton.setOnClickListener { selectThicknessSlot(0) }
+        mediumButton.setOnClickListener { selectThicknessSlot(1) }
+        thickButton.setOnClickListener { selectThicknessSlot(2) }
+        strokeEraserModeButton.setOnClickListener {
+            viewModel.selectEraserMode(EraserMode.STROKE)
+            performHapticFeedback()
+        }
+        areaEraserModeButton.setOnClickListener {
+            viewModel.selectEraserMode(EraserMode.AREA)
+            performHapticFeedback()
+        }
+        lineShapeButton.setOnClickListener { selectDrawingTool(DrawingTool.LINE) }
+        rectangleShapeButton.setOnClickListener { selectDrawingTool(DrawingTool.RECTANGLE) }
+        circleShapeButton.setOnClickListener { selectDrawingTool(DrawingTool.CIRCLE) }
+        listOf(
+            lineShapeButton to R.string.line_tool,
+            rectangleShapeButton to R.string.rectangle_tool,
+            circleShapeButton to R.string.circle_tool,
+        ).forEach { (button, label) -> TooltipCompat.setTooltipText(button, getString(label)) }
+    }
+
+    private fun dismissToolSettingsPopup() {
+        toolSettingsPopup?.dismiss()
+        toolSettingsPopup = null
+        toolSettingsBinding = null
     }
 
     private fun showMoreMenu() {
@@ -571,6 +655,7 @@ class CanvasFragment : Fragment() {
     }
 
     private fun cancelKeyboardInteraction() {
+        dismissToolSettingsPopup()
         binding.drawingCanvas.cancelActiveStroke()
         binding.drawingCanvas.clearSelection()
         if (binding.pagePanel.isVisible) {
@@ -686,16 +771,9 @@ class CanvasFragment : Fragment() {
             textToolButton,
         ).forEach { setSelectionState(it, it.isChecked) }
         renderShapeToolButton(settings.tool)
-        val showSettings = settings.tool in DRAWING_OPTION_TOOLS
-        colorButtons().forEach { it.isVisible = showSettings }
-        thicknessButtons().forEach { it.isVisible = showSettings }
-        strokeEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
-        areaEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
-        strokeEraserModeButton.isChecked = settings.eraserMode == EraserMode.STROKE
-        areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
-        setSelectionState(strokeEraserModeButton, strokeEraserModeButton.isChecked)
-        setSelectionState(areaEraserModeButton, areaEraserModeButton.isChecked)
-        if (showSettings) renderColorAndThickness(settings)
+        toolSettingsButton.isVisible = settings.tool in TOOL_SETTINGS_TOOLS
+        renderCurrentToolStyle(settings)
+        toolSettingsBinding?.let { renderToolSettingsPanel(it, settings) }
 
         val state = currentState as? CanvasUiState.Ready
         val isLasso = settings.tool == DrawingTool.LASSO
@@ -706,7 +784,6 @@ class CanvasFragment : Fragment() {
         val hasSingleTextSelection = settings.tool == DrawingTool.TEXT &&
             selection.texts.size == 1 && selection.strokes.isEmpty()
         val showSelectionActions = (isLasso && hasSelection) || hasSingleTextSelection
-        lassoHint.isVisible = isLasso && !hasSelection
         copySelectionButton.isVisible = showSelectionActions
         deleteSelectionButton.isVisible = showSelectionActions
         pasteSelectionButton.isVisible = isLasso && canPaste
@@ -714,9 +791,87 @@ class CanvasFragment : Fragment() {
             selection.texts.size == 1 && selection.strokes.isEmpty()
         listOf(copySelectionButton, pasteSelectionButton, deleteSelectionButton, editTextButton)
             .forEach { it.isEnabled = !isBusy }
+        selectionActionsBar.isVisible = showSelectionActions || (isLasso && canPaste)
+        if (selectionActionsBar.isVisible) positionSelectionActions()
     }
 
-    private fun renderColorAndThickness(settings: DrawingSettings) {
+    private fun renderCurrentToolStyle(settings: DrawingSettings) = with(binding) {
+        val isEraser = settings.tool == DrawingTool.ERASER
+        currentStylePreview.isVisible = !isEraser
+        currentToolSettingIcon.isVisible = isEraser
+        if (isEraser) {
+            val modeLabel = getString(
+                if (settings.eraserMode == EraserMode.STROKE) R.string.stroke_eraser_mode
+                else R.string.area_eraser_mode,
+            )
+            toolSettingsButton.contentDescription = getString(
+                R.string.current_eraser_settings,
+                getString(R.string.eraser_settings),
+                modeLabel,
+            )
+            return@with
+        }
+        if (settings.tool !in DRAWING_OPTION_TOOLS) return@with
+        val isHighlighter = settings.tool == DrawingTool.HIGHLIGHTER
+        val selectedArgb = if (isHighlighter) settings.highlighter.color.argb else settings.pen.color.argb
+        currentColorSwatch.backgroundTintList = ColorStateList.valueOf(selectedArgb)
+        currentThicknessPreview.backgroundTintList = ColorStateList.valueOf(selectedArgb)
+        val optionIndex = when {
+            isHighlighter -> settings.highlighter.thickness.ordinal
+            settings.tool == DrawingTool.TEXT -> settings.textSize.ordinal
+            else -> settings.pen.thickness.ordinal
+        }
+        currentThicknessPreview.layoutParams = currentThicknessPreview.layoutParams.apply {
+            height = resources.getDimensionPixelSize(TOOL_PREVIEW_DIMENSIONS[optionIndex])
+        }
+        val colorLabel = getString(colorLabelResources(isHighlighter)[selectedColorIndex(settings)])
+        val optionLabel = getString(
+            if (settings.tool == DrawingTool.TEXT) TEXT_SIZE_LABELS[optionIndex]
+            else THICKNESS_LABELS[optionIndex],
+        )
+        toolSettingsButton.contentDescription = getString(
+            R.string.current_tool_settings,
+            getString(toolSettingsTitleResource(settings.tool)),
+            colorLabel,
+            optionLabel,
+        )
+    }
+
+    private fun renderToolSettingsPanel(
+        panel: PopupToolSettingsBinding,
+        settings: DrawingSettings,
+    ) = with(panel) {
+        val isEraser = settings.tool == DrawingTool.ERASER
+        val isShape = settings.tool in SHAPE_TOOLS
+        val showInkOptions = settings.tool in DRAWING_OPTION_TOOLS
+        toolSettingsTitle.setText(toolSettingsTitleResource(settings.tool))
+        shapeOptions.isVisible = isShape
+        colorLabel.isVisible = showInkOptions
+        colorOptions.isVisible = showInkOptions
+        thicknessLabel.isVisible = showInkOptions
+        thicknessOptions.isVisible = showInkOptions
+        eraserOptions.isVisible = isEraser
+        thicknessLabel.setText(
+            if (settings.tool == DrawingTool.TEXT) R.string.text_size else R.string.thickness,
+        )
+
+        lineShapeButton.isChecked = settings.tool == DrawingTool.LINE
+        rectangleShapeButton.isChecked = settings.tool == DrawingTool.RECTANGLE
+        circleShapeButton.isChecked = settings.tool == DrawingTool.CIRCLE
+        listOf(lineShapeButton, rectangleShapeButton, circleShapeButton).forEach {
+            setSelectionState(it, it.isChecked)
+        }
+        strokeEraserModeButton.isChecked = settings.eraserMode == EraserMode.STROKE
+        areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
+        setSelectionState(strokeEraserModeButton, strokeEraserModeButton.isChecked)
+        setSelectionState(areaEraserModeButton, areaEraserModeButton.isChecked)
+        if (showInkOptions) renderColorAndThickness(panel, settings)
+    }
+
+    private fun renderColorAndThickness(
+        panel: PopupToolSettingsBinding,
+        settings: DrawingSettings,
+    ) {
         val colors = if (settings.tool == DrawingTool.HIGHLIGHTER) {
             listOf(
                 Triple(HighlighterColor.YELLOW.argb, R.color.highlighter_yellow, R.string.highlighter_color_yellow),
@@ -736,7 +891,7 @@ class CanvasFragment : Fragment() {
             settings.highlighter.color.argb
         } else settings.pen.color.argb
         val strokeWidth = resources.getDimensionPixelSize(R.dimen.pen_selected_stroke_width)
-        colorButtons().zip(colors).forEach { (button, color) ->
+        panelColorButtons(panel).zip(colors).forEach { (button, color) ->
             val selected = color.first == selectedArgb
             button.backgroundTintList = ColorStateList.valueOf(requireContext().getColor(color.second))
             button.contentDescription = getString(color.third)
@@ -755,7 +910,7 @@ class CanvasFragment : Fragment() {
                 checkColor,
             )
             button.iconPadding = 0
-            button.iconSize = resources.getDimensionPixelSize(R.dimen.toolbar_icon_size)
+            button.iconSize = resources.getDimensionPixelSize(R.dimen.tool_swatch_check_size)
             setSelectionState(button, selected)
         }
 
@@ -764,18 +919,65 @@ class CanvasFragment : Fragment() {
         } else if (settings.tool == DrawingTool.TEXT) {
             settings.textSize.ordinal
         } else settings.pen.thickness.ordinal
-        if (settings.tool == DrawingTool.TEXT) {
-            binding.thinButton.setText(R.string.text_small)
-            binding.mediumButton.setText(R.string.text_medium)
-            binding.thickButton.setText(R.string.text_large)
-        } else {
-            binding.thinButton.setText(R.string.pen_thin)
-            binding.mediumButton.setText(R.string.pen_medium)
-            binding.thickButton.setText(R.string.pen_thick)
-        }
-        thicknessButtons().forEachIndexed { index, button ->
+        panelThicknessButtons(panel).forEachIndexed { index, button ->
+            if (settings.tool == DrawingTool.TEXT) {
+                button.icon = null
+                button.text = getString(R.string.text_size_preview)
+                button.setTextSize(TypedValue.COMPLEX_UNIT_SP, TextSize.entries[index].sizeSp)
+                button.contentDescription = getString(TEXT_SIZE_LABELS[index])
+            } else {
+                button.text = null
+                button.setIconResource(THICKNESS_ICONS[index])
+                button.contentDescription = getString(THICKNESS_LABELS[index])
+            }
             button.isChecked = index == selectedThickness
             setSelectionState(button, button.isChecked)
+        }
+    }
+
+    private fun selectedColorIndex(settings: DrawingSettings): Int = if (
+        settings.tool == DrawingTool.HIGHLIGHTER
+    ) settings.highlighter.color.ordinal else settings.pen.color.ordinal
+
+    private fun colorLabelResources(isHighlighter: Boolean): IntArray = if (isHighlighter) {
+        intArrayOf(
+            R.string.highlighter_color_yellow,
+            R.string.highlighter_color_green,
+            R.string.highlighter_color_pink,
+            R.string.highlighter_color_blue,
+        )
+    } else {
+        intArrayOf(
+            R.string.pen_color_black,
+            R.string.pen_color_blue,
+            R.string.pen_color_red,
+            R.string.pen_color_green,
+        )
+    }
+
+    private fun toolSettingsTitleResource(tool: DrawingTool): Int = when (tool) {
+        DrawingTool.PEN -> R.string.pen_settings
+        DrawingTool.HIGHLIGHTER -> R.string.highlighter_settings
+        DrawingTool.ERASER -> R.string.eraser_settings
+        DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE -> R.string.shape_settings
+        DrawingTool.TEXT -> R.string.text_settings
+        DrawingTool.LASSO -> R.string.tool_settings
+    }
+
+    private fun positionSelectionActions() = with(binding) {
+        if (!selectionActionsBar.isVisible) return@with
+        selectionActionsBar.doOnLayout { actions ->
+            val canvasWidth = drawingCanvas.width.toFloat()
+            val canvasHeight = drawingCanvas.height.toFloat()
+            if (canvasWidth <= 0f || canvasHeight <= 0f) return@doOnLayout
+            val margin = resources.getDimension(R.dimen.selection_toolbar_margin)
+            val bounds = drawingCanvas.selectionBoundsInView()
+            val targetCenterX = bounds?.centerX() ?: canvasWidth / 2f
+            val preferredTop = bounds?.top?.minus(actions.height + margin) ?: margin
+            val maximumX = (canvasWidth - actions.width - margin).coerceAtLeast(margin)
+            val maximumY = (canvasHeight - actions.height - margin).coerceAtLeast(margin)
+            actions.translationX = (targetCenterX - actions.width / 2f).coerceIn(margin, maximumX)
+            actions.translationY = preferredTop.coerceIn(margin, maximumY)
         }
     }
 
@@ -830,7 +1032,10 @@ class CanvasFragment : Fragment() {
     }
 
     private fun selectDrawingTool(tool: DrawingTool) {
-        if (currentSettings.tool != tool) binding.drawingCanvas.clearSelection()
+        val toolChanged = currentSettings.tool != tool
+        val remainsInShapeGroup = currentSettings.tool in SHAPE_TOOLS && tool in SHAPE_TOOLS
+        if (toolChanged) binding.drawingCanvas.clearSelection()
+        if (toolChanged && !remainsInShapeGroup) dismissToolSettingsPopup()
         viewModel.selectTool(tool)
         performHapticFeedback()
     }
@@ -1028,11 +1233,11 @@ class CanvasFragment : Fragment() {
         }
     }
 
-    private fun colorButtons(): List<MaterialButton> = with(binding) {
+    private fun panelColorButtons(panel: PopupToolSettingsBinding): List<MaterialButton> = with(panel) {
         listOf(blackColorButton, blueColorButton, redColorButton, greenColorButton)
     }
 
-    private fun thicknessButtons(): List<MaterialButton> = with(binding) {
+    private fun panelThicknessButtons(panel: PopupToolSettingsBinding): List<MaterialButton> = with(panel) {
         listOf(thinButton, mediumButton, thickButton)
     }
 
@@ -1050,6 +1255,7 @@ class CanvasFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        dismissToolSettingsPopup()
         binding.root.keepScreenOn = false
         pdfRenderGeneration += 1
         pdfRenderKey = null
@@ -1087,9 +1293,6 @@ class CanvasFragment : Fragment() {
         const val MAX_ZOOM = 4f
         const val ZOOM_STEP = 0.25f
         const val ZOOM_EPSILON = 0.001f
-        const val SHAPE_LINE_ID = 1
-        const val SHAPE_RECTANGLE_ID = 2
-        const val SHAPE_CIRCLE_ID = 3
         const val MORE_EXPORT_ID = 10
         const val MORE_SHORTCUTS_ID = 11
         const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"
@@ -1101,6 +1304,27 @@ class CanvasFragment : Fragment() {
             DrawingTool.RECTANGLE,
             DrawingTool.CIRCLE,
             DrawingTool.TEXT,
+        )
+        val TOOL_SETTINGS_TOOLS = DRAWING_OPTION_TOOLS + DrawingTool.ERASER
+        val TOOL_PREVIEW_DIMENSIONS = intArrayOf(
+            R.dimen.tool_preview_thin,
+            R.dimen.tool_preview_medium,
+            R.dimen.tool_preview_thick,
+        )
+        val THICKNESS_ICONS = intArrayOf(
+            R.drawable.ic_thickness_thin,
+            R.drawable.ic_thickness_medium,
+            R.drawable.ic_thickness_thick,
+        )
+        val THICKNESS_LABELS = intArrayOf(
+            R.string.pen_thin,
+            R.string.pen_medium,
+            R.string.pen_thick,
+        )
+        val TEXT_SIZE_LABELS = intArrayOf(
+            R.string.text_small,
+            R.string.text_medium,
+            R.string.text_large,
         )
     }
 }

@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardBackgroundColor="@color/noteup_bg_layer_default"
+    app:cardCornerRadius="@dimen/tool_popup_corner_radius"
+    app:cardElevation="@dimen/tool_popup_elevation"
+    app:strokeColor="@color/noteup_stroke_neutral_weak"
+    app:strokeWidth="@dimen/hairline_width">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_medium">
+
+        <TextView
+            android:id="@+id/tool_settings_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+            tools:text="펜 설정" />
+
+        <LinearLayout
+            android:id="@+id/shape_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/shape_kind"
+                android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_extra_small"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/line_shape_button"
+                    style="@style/Widget.NoteUp.Button.IconTool"
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@string/line_tool"
+                    app:icon="@drawable/ic_tool_line" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/rectangle_shape_button"
+                    style="@style/Widget.NoteUp.Button.IconTool"
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@string/rectangle_tool"
+                    app:icon="@drawable/ic_tool_rectangle" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/circle_shape_button"
+                    style="@style/Widget.NoteUp.Button.IconTool"
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@string/circle_tool"
+                    app:icon="@drawable/ic_tool_circle" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/color_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:text="@string/color"
+            android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+
+        <LinearLayout
+            android:id="@+id/color_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_extra_small"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/black_color_button"
+                style="@style/Widget.NoteUp.Button.ColorSwatch"
+                android:contentDescription="@string/pen_color_black"
+                app:backgroundTint="@color/pen_black" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/blue_color_button"
+                style="@style/Widget.NoteUp.Button.ColorSwatch"
+                android:contentDescription="@string/pen_color_blue"
+                app:backgroundTint="@color/pen_blue" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/red_color_button"
+                style="@style/Widget.NoteUp.Button.ColorSwatch"
+                android:contentDescription="@string/pen_color_red"
+                app:backgroundTint="@color/pen_red" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/green_color_button"
+                style="@style/Widget.NoteUp.Button.ColorSwatch"
+                android:contentDescription="@string/pen_color_green"
+                app:backgroundTint="@color/pen_green" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/thickness_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:text="@string/thickness"
+            android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+
+        <LinearLayout
+            android:id="@+id/thickness_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_extra_small"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/thin_button"
+                style="@style/Widget.NoteUp.Button.IconTool"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:contentDescription="@string/pen_thin"
+                app:icon="@drawable/ic_thickness_thin" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/medium_button"
+                style="@style/Widget.NoteUp.Button.IconTool"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:contentDescription="@string/pen_medium"
+                app:icon="@drawable/ic_thickness_medium" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/thick_button"
+                style="@style/Widget.NoteUp.Button.IconTool"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:contentDescription="@string/pen_thick"
+                app:icon="@drawable/ic_thickness_thick" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/eraser_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/eraser_mode"
+                android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_extra_small"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/stroke_eraser_mode_button"
+                    style="@style/Widget.NoteUp.Button.Tool"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/stroke_eraser_mode" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/area_eraser_mode_button"
+                    style="@style/Widget.NoteUp.Button.Tool"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_small"
+                    android:layout_weight="1"
+                    android:text="@string/area_eraser_mode" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
