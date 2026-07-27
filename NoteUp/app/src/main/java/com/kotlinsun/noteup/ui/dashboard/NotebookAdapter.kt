@@ -3,9 +3,11 @@ package com.kotlinsun.noteup.ui.dashboard
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.ItemNotebookBinding
 import com.kotlinsun.noteup.domain.model.Notebook
 
@@ -48,6 +50,25 @@ class NotebookAdapter(
             notebookItem.isActivated = isSelected
             notebookName.isActivated = isSelected
             notebookMoreButton.isActivated = isSelected
+            notebookItem.contentDescription = root.context.getString(
+                R.string.accessibility_notebook_item,
+                notebook.name,
+            )
+            notebookMoreButton.contentDescription = root.context.getString(
+                R.string.accessibility_more_options_for,
+                notebook.name,
+            )
+            ViewCompat.setStateDescription(
+                notebookItem,
+                root.context.getString(
+                    if (isSelected) R.string.accessibility_selected
+                    else R.string.accessibility_not_selected,
+                ),
+            )
+            ViewCompat.setImportantForAccessibility(
+                notebookName,
+                ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO,
+            )
             notebookItem.setOnClickListener { onClick(notebook) }
             notebookMoreButton.setOnClickListener { onMoreClick(it, notebook) }
         }

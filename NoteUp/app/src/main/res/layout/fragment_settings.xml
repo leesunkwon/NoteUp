@@ -26,10 +26,16 @@
         android:layout_marginStart="@dimen/spacing_small"
         android:text="@string/settings_title"
         android:textAppearance="@style/TextAppearance.NoteUp.ScreenTitle"
-        app:layout_constraintBottom_toBottomOf="@id/back_button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/back_button"
         app:layout_constraintTop_toTopOf="@id/back_button" />
+
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/settings_header_bottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="bottom"
+        app:constraint_referenced_ids="back_button,settings_title" />
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="0dp"
@@ -41,7 +47,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/back_button"
+        app:layout_constraintTop_toBottomOf="@id/settings_header_bottom"
         app:layout_constraintWidth_max="@dimen/settings_content_max_width">
 
         <LinearLayout
@@ -231,9 +237,10 @@
             <TextView
                 android:id="@+id/app_version"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/settings_row_min_height"
+                android:layout_height="wrap_content"
                 android:background="@drawable/bg_settings_row"
                 android:gravity="center_vertical"
+                android:minHeight="@dimen/settings_row_min_height"
                 android:paddingHorizontal="@dimen/spacing_medium"
                 android:textAppearance="@style/TextAppearance.NoteUp.Body" />
         </LinearLayout>

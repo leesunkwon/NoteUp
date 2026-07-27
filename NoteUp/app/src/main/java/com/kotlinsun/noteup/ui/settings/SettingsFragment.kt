@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -101,6 +102,34 @@ class SettingsFragment : Fragment() {
         behaviorSection.pageSwipeSwitch.isChecked = state.settings.pageSwipeEnabled
         behaviorSection.keepScreenOnSwitch.isChecked = state.settings.keepScreenOn
         behaviorSection.hapticFeedbackSwitch.isChecked = state.settings.hapticFeedbackEnabled
+        themeModeRow.contentDescription = getString(
+            R.string.accessibility_setting_value,
+            getString(R.string.theme_mode_title),
+            themeModeSummary.text,
+        )
+        canvasAppearanceRow.contentDescription = getString(
+            R.string.accessibility_setting_value,
+            getString(R.string.canvas_appearance_title),
+            canvasAppearanceSummary.text,
+        )
+        defaultTemplateRow.contentDescription = getString(
+            R.string.accessibility_setting_value,
+            getString(R.string.default_template_title),
+            defaultTemplateSummary.text,
+        )
+        trashRetentionCard.contentDescription = getString(
+            R.string.accessibility_setting_value,
+            getString(R.string.trash_retention_title),
+            trashRetentionSummary.text,
+        )
+        listOf(
+            themeModeSummary,
+            canvasAppearanceSummary,
+            defaultTemplateSummary,
+            trashRetentionSummary,
+        ).forEach {
+            ViewCompat.setImportantForAccessibility(it, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO)
+        }
     }
 
     private fun showThemeModeDialog() {

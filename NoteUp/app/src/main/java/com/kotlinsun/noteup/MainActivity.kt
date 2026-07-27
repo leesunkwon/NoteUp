@@ -2,22 +2,25 @@ package com.kotlinsun.noteup
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.viewModels
+import android.view.KeyEvent
+import android.widget.EditText
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import com.kotlinsun.noteup.databinding.ActivityMainBinding
-import androidx.core.os.bundleOf
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.NavHostFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.kotlinsun.noteup.databinding.ActivityMainBinding
 import com.kotlinsun.noteup.domain.model.PdfImportError
 import com.kotlinsun.noteup.domain.model.PdfImportPreview
 import com.kotlinsun.noteup.domain.model.PdfImportUiState
+import com.kotlinsun.noteup.ui.canvas.CanvasFragment
 import com.kotlinsun.noteup.ui.pdfimport.PdfImportViewModel
 import kotlinx.coroutines.launch
 
@@ -54,6 +57,14 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         consumePdfIntent(intent)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (super.dispatchKeyEvent(event)) return true
+        if (currentFocus is EditText) return false
+        val navHost = supportFragmentManager.findFragmentById(R.id.main) as? NavHostFragment
+        val canvas = navHost?.childFragmentManager?.primaryNavigationFragment as? CanvasFragment
+        return canvas?.handleKeyEvent(event) == true
     }
 
     private fun consumePdfIntent(source: Intent) {

@@ -3,11 +3,12 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/notebook_item"
     android:layout_width="match_parent"
-    android:layout_height="@dimen/sidebar_item_height"
+    android:layout_height="wrap_content"
     android:background="@drawable/bg_sidebar_item"
     android:clickable="true"
     android:focusable="true"
     android:gravity="center_vertical"
+    android:minHeight="@dimen/sidebar_item_height"
     android:orientation="horizontal"
     android:paddingStart="@dimen/spacing_medium">
 
@@ -17,7 +18,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:ellipsize="end"
-        android:maxLines="1"
+        android:maxLines="2"
         android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
         android:textColor="@color/noteup_navigation_text"
         tools:text="업무 노트" />

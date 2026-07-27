@@ -3,6 +3,7 @@ package com.kotlinsun.noteup.ui.dashboard
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -53,6 +54,23 @@ class NoteAdapter(
             noteModifiedAt.text = root.context.getString(
                 if (note.deletedAt == null) R.string.note_modified_at else R.string.deleted_at,
                 dateFormatter.format(Date(note.deletedAt ?: note.updatedAt)),
+            )
+            noteCard.contentDescription = root.context.getString(
+                R.string.accessibility_note_item,
+                note.title,
+                noteModifiedAt.text,
+            )
+            noteMoreButton.contentDescription = root.context.getString(
+                R.string.accessibility_more_options_for,
+                note.title,
+            )
+            ViewCompat.setImportantForAccessibility(
+                noteTitle,
+                ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO,
+            )
+            ViewCompat.setImportantForAccessibility(
+                noteModifiedAt,
+                ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO,
             )
             noteCard.setOnClickListener { onClick(note) }
             noteMoreButton.setOnClickListener { onMoreClick(it, note) }

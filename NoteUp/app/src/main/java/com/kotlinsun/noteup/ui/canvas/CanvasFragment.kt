@@ -4,15 +4,20 @@ import android.app.Activity
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.FileProvider
+import androidx.core.graphics.ColorUtils
+import androidx.core.view.ViewCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -72,6 +77,7 @@ class CanvasFragment : Fragment() {
     private var pdfPageLoading = false
     private var pdfDisplayedPageId: Long? = null
     private var pdfRenderGeneration = 0L
+    private var currentZoomScale = MIN_ZOOM
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -187,8 +193,7 @@ class CanvasFragment : Fragment() {
             )
         }
         deleteSelectionButton.setOnClickListener {
-            viewModel.deleteSelection()
-            drawingCanvas.clearSelection()
+            deleteCurrentSelection()
         }
         editTextButton.setOnClickListener {
             drawingCanvas.currentSelection().texts.singleOrNull()?.let(::showEditTextDialog)
@@ -273,7 +278,23 @@ class CanvasFragment : Fragment() {
             undoButton to R.string.undo,
             redoButton to R.string.redo,
             moreButton to R.string.more,
+            pageListButton to R.string.page_list,
+            previousPageButton to R.string.previous_page,
+            nextPageButton to R.string.next_page,
+            addPageButton to R.string.add_page,
+            closePagePanelButton to R.string.close,
+            zoomOutButton to R.string.zoom_out,
+            zoomResetButton to R.string.zoom_reset,
+            zoomInButton to R.string.zoom_in,
         ).forEach { (button, labelRes) -> setToolbarButtonLabel(button, labelRes) }
+        ViewCompat.setAccessibilityLiveRegion(
+            saveStatus,
+            ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE,
+        )
+        ViewCompat.setAccessibilityLiveRegion(
+            pageIndicator,
+            ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE,
+        )
     }
 
     private fun setToolbarButtonLabel(button: MaterialButton, labelRes: Int) {
@@ -331,6 +352,8 @@ class CanvasFragment : Fragment() {
             }
             undoButton.isEnabled = state.canUndo
             redoButton.isEnabled = state.canRedo
+            setAvailabilityState(undoButton, state.canUndo)
+            setAvailabilityState(redoButton, state.canRedo)
             previousPageButton.isEnabled = !state.isBusy && state.pagePosition > 0
             nextPageButton.isEnabled = !state.isBusy && state.pagePosition < state.pages.lastIndex
             addPageButton.isEnabled = !state.isBusy
@@ -340,6 +363,7 @@ class CanvasFragment : Fragment() {
                 state.pagePosition + 1,
                 state.pages.size,
             )
+            renderCanvasAccessibility()
             pageAdapter.submitPages(state.pages, state.page.id, state.thumbnailRevisions)
             renderPdfBackground(state.page, state.viewport.scale)
             if (renderedPageId != state.page.id) {
@@ -376,6 +400,8 @@ class CanvasFragment : Fragment() {
             saveStatus.text = null
             undoButton.isEnabled = false
             redoButton.isEnabled = false
+            setAvailabilityState(undoButton, false)
+            setAvailabilityState(redoButton, false)
             previousPageButton.isEnabled = false
             nextPageButton.isEnabled = false
             addPageButton.isEnabled = false
@@ -394,6 +420,7 @@ class CanvasFragment : Fragment() {
         } == true,
     ) = with(binding) {
         val clampedScale = scale.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        currentZoomScale = clampedScale
         zoomPercentage.text = getString(
             R.string.zoom_percentage,
             (clampedScale * 100f).roundToInt(),
@@ -401,6 +428,7 @@ class CanvasFragment : Fragment() {
         zoomOutButton.isEnabled = controlsEnabled && clampedScale > MIN_ZOOM + ZOOM_EPSILON
         zoomResetButton.isEnabled = controlsEnabled && clampedScale > MIN_ZOOM + ZOOM_EPSILON
         zoomInButton.isEnabled = controlsEnabled && clampedScale < MAX_ZOOM - ZOOM_EPSILON
+        renderCanvasAccessibility()
     }
 
     private fun showShapeMenu() {
@@ -426,12 +454,128 @@ class CanvasFragment : Fragment() {
         val state = currentState as? CanvasUiState.Ready
         PopupMenu(requireContext(), binding.moreButton).apply {
             menu.add(0, MORE_EXPORT_ID, 0, R.string.export).isEnabled = state != null && !state.isBusy
+            menu.add(0, MORE_SHORTCUTS_ID, 1, R.string.keyboard_shortcuts)
             setOnMenuItemClickListener { item ->
-                if (item.itemId != MORE_EXPORT_ID) return@setOnMenuItemClickListener false
-                showExportFormatDialog()
-                true
+                when (item.itemId) {
+                    MORE_EXPORT_ID -> {
+                        showExportFormatDialog()
+                        true
+                    }
+                    MORE_SHORTCUTS_ID -> {
+                        showKeyboardShortcutsDialog()
+                        true
+                    }
+                    else -> false
+                }
             }
             show()
+        }
+    }
+
+    private fun showKeyboardShortcutsDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.keyboard_shortcuts)
+            .setMessage(R.string.keyboard_shortcuts_description)
+            .setPositiveButton(R.string.close, null)
+            .show()
+    }
+
+    fun handleKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount > 0 || _binding == null) {
+            return false
+        }
+        val state = currentState as? CanvasUiState.Ready
+        val commandModifier = event.isCtrlPressed || event.isMetaPressed
+        if (commandModifier && event.keyCode == KeyEvent.KEYCODE_Z) {
+            if (event.isShiftPressed) {
+                if (state?.canRedo == true) viewModel.redo()
+            } else if (state?.canUndo == true) {
+                viewModel.undo()
+            }
+            return true
+        }
+        if (commandModifier && event.keyCode == KeyEvent.KEYCODE_Y) {
+            if (state?.canRedo == true) viewModel.redo()
+            return true
+        }
+        if (commandModifier || event.isAltPressed) return false
+
+        val canEdit = state != null && !state.isBusy && !state.isExporting && !pdfPageLoading
+        return when (event.keyCode) {
+            KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_NUMPAD_1 -> {
+                if (canEdit) selectDrawingTool(DrawingTool.PEN)
+                true
+            }
+            KeyEvent.KEYCODE_2, KeyEvent.KEYCODE_NUMPAD_2 -> {
+                if (canEdit) selectDrawingTool(DrawingTool.HIGHLIGHTER)
+                true
+            }
+            KeyEvent.KEYCODE_3, KeyEvent.KEYCODE_NUMPAD_3 -> {
+                if (canEdit) selectDrawingTool(DrawingTool.ERASER)
+                true
+            }
+            KeyEvent.KEYCODE_4, KeyEvent.KEYCODE_NUMPAD_4 -> {
+                if (canEdit) selectDrawingTool(DrawingTool.LASSO)
+                true
+            }
+            KeyEvent.KEYCODE_5, KeyEvent.KEYCODE_NUMPAD_5 -> {
+                if (canEdit) selectDrawingTool(DrawingTool.TEXT)
+                true
+            }
+            KeyEvent.KEYCODE_LEFT_BRACKET -> {
+                if (canEdit && state != null && state.pagePosition > 0) {
+                    viewModel.selectPreviousPage()
+                }
+                true
+            }
+            KeyEvent.KEYCODE_RIGHT_BRACKET -> {
+                if (canEdit && state != null && state.pagePosition < state.pages.lastIndex) {
+                    viewModel.selectNextPage()
+                }
+                true
+            }
+            KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> {
+                if (canEdit) binding.drawingCanvas.adjustZoom(-ZOOM_STEP)
+                true
+            }
+            KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0 -> {
+                if (canEdit) binding.drawingCanvas.resetZoom()
+                true
+            }
+            KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_NUMPAD_ADD -> {
+                if (canEdit) binding.drawingCanvas.adjustZoom(ZOOM_STEP)
+                true
+            }
+            KeyEvent.KEYCODE_EQUALS -> {
+                if (!event.isShiftPressed) return false
+                if (canEdit) binding.drawingCanvas.adjustZoom(ZOOM_STEP)
+                true
+            }
+            KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL -> {
+                if (canEdit && !binding.drawingCanvas.currentSelection().isEmpty) {
+                    deleteCurrentSelection()
+                }
+                true
+            }
+            KeyEvent.KEYCODE_ESCAPE -> {
+                cancelKeyboardInteraction()
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun deleteCurrentSelection() {
+        viewModel.deleteSelection()
+        binding.drawingCanvas.clearSelection()
+    }
+
+    private fun cancelKeyboardInteraction() {
+        binding.drawingCanvas.cancelActiveStroke()
+        binding.drawingCanvas.clearSelection()
+        if (binding.pagePanel.isVisible) {
+            pagePanelOpen = false
+            binding.pagePanel.isVisible = false
         }
     }
 
@@ -533,6 +677,14 @@ class CanvasFragment : Fragment() {
         lassoToolButton.isChecked = settings.tool == DrawingTool.LASSO
         shapeToolButton.isChecked = settings.tool in SHAPE_TOOLS
         textToolButton.isChecked = settings.tool == DrawingTool.TEXT
+        listOf(
+            penToolButton,
+            highlighterToolButton,
+            eraserToolButton,
+            lassoToolButton,
+            shapeToolButton,
+            textToolButton,
+        ).forEach { setSelectionState(it, it.isChecked) }
         renderShapeToolButton(settings.tool)
         val showSettings = settings.tool in DRAWING_OPTION_TOOLS
         colorButtons().forEach { it.isVisible = showSettings }
@@ -541,6 +693,8 @@ class CanvasFragment : Fragment() {
         areaEraserModeButton.isVisible = settings.tool == DrawingTool.ERASER
         strokeEraserModeButton.isChecked = settings.eraserMode == EraserMode.STROKE
         areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
+        setSelectionState(strokeEraserModeButton, strokeEraserModeButton.isChecked)
+        setSelectionState(areaEraserModeButton, areaEraserModeButton.isChecked)
         if (showSettings) renderColorAndThickness(settings)
 
         val state = currentState as? CanvasUiState.Ready
@@ -587,6 +741,22 @@ class CanvasFragment : Fragment() {
             button.backgroundTintList = ColorStateList.valueOf(requireContext().getColor(color.second))
             button.contentDescription = getString(color.third)
             button.strokeWidth = if (selected) strokeWidth else 0
+            button.isCheckable = true
+            button.isChecked = selected
+            button.icon = if (selected) {
+                AppCompatResources.getDrawable(requireContext(), R.drawable.ic_check)
+            } else null
+            val opaqueSwatchColor = ColorUtils.setAlphaComponent(color.first, 255)
+            val checkColor = if (
+                ColorUtils.calculateContrast(Color.BLACK, opaqueSwatchColor) >=
+                ColorUtils.calculateContrast(Color.WHITE, opaqueSwatchColor)
+            ) Color.BLACK else Color.WHITE
+            button.iconTint = ColorStateList.valueOf(
+                checkColor,
+            )
+            button.iconPadding = 0
+            button.iconSize = resources.getDimensionPixelSize(R.dimen.toolbar_icon_size)
+            setSelectionState(button, selected)
         }
 
         val selectedThickness = if (settings.tool == DrawingTool.HIGHLIGHTER) {
@@ -605,7 +775,38 @@ class CanvasFragment : Fragment() {
         }
         thicknessButtons().forEachIndexed { index, button ->
             button.isChecked = index == selectedThickness
+            setSelectionState(button, button.isChecked)
         }
+    }
+
+    private fun setSelectionState(view: View, selected: Boolean) {
+        ViewCompat.setStateDescription(
+            view,
+            getString(
+                if (selected) R.string.accessibility_selected
+                else R.string.accessibility_not_selected,
+            ),
+        )
+    }
+
+    private fun setAvailabilityState(view: View, available: Boolean) {
+        ViewCompat.setStateDescription(
+            view,
+            getString(
+                if (available) R.string.accessibility_available
+                else R.string.accessibility_unavailable,
+            ),
+        )
+    }
+
+    private fun renderCanvasAccessibility() {
+        val state = currentState as? CanvasUiState.Ready ?: return
+        binding.drawingCanvas.contentDescription = getString(
+            R.string.accessibility_canvas,
+            state.pagePosition + 1,
+            state.pages.size,
+            (currentZoomScale * 100f).roundToInt(),
+        )
     }
 
     private fun selectColorSlot(index: Int) {
@@ -890,6 +1091,7 @@ class CanvasFragment : Fragment() {
         const val SHAPE_RECTANGLE_ID = 2
         const val SHAPE_CIRCLE_ID = 3
         const val MORE_EXPORT_ID = 10
+        const val MORE_SHORTCUTS_ID = 11
         const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"
         val SHAPE_TOOLS = setOf(DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE)
         val DRAWING_OPTION_TOOLS = setOf(
