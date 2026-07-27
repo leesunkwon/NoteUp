@@ -4,21 +4,39 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.data.preferences.TrashRetention
 import com.kotlinsun.noteup.databinding.FragmentSettingsBinding
+import com.kotlinsun.noteup.domain.model.CanvasAppearance
+import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.ThemeMode
+import com.kotlinsun.noteup.nightMode
+import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
 import kotlinx.coroutines.launch
 
 class SettingsFragment : Fragment() {
 
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = checkNotNull(_binding)
+    private val viewModel: SettingsViewModel by viewModels {
+        val container = (requireActivity().application as NoteUpApplication).container
+        SettingsViewModel.Factory(
+            container.appSettingsStore,
+            container.trashRetentionStore,
+            container.trashCleanupService,
+        )
+    }
+    private var currentState = SettingsUiState()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -31,32 +49,158 @@ class SettingsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding.trashRetentionCard.setOnClickListener { showRetentionDialog() }
-        val store = (requireActivity().application as NoteUpApplication).container.trashRetentionStore
+        setupActions()
+        renderVersion()
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                store.retention.collect { binding.trashRetentionSummary.setText(it.labelRes()) }
+                viewModel.uiState.collect(::render)
             }
         }
     }
 
+    private fun setupActions() = with(binding) {
+        backButton.setOnClickListener { findNavController().popBackStack() }
+        themeModeRow.setOnClickListener { showThemeModeDialog() }
+        canvasAppearanceRow.setOnClickListener { showCanvasAppearanceDialog() }
+        defaultTemplateRow.setOnClickListener { showDefaultTemplateDialog() }
+        trashRetentionCard.setOnClickListener { showRetentionDialog() }
+        resetSettingsRow.setOnClickListener { confirmReset() }
+
+        behaviorSection.pageSwipeRow.setOnClickListener {
+            behaviorSection.pageSwipeSwitch.toggle()
+        }
+        behaviorSection.keepScreenOnRow.setOnClickListener {
+            behaviorSection.keepScreenOnSwitch.toggle()
+        }
+        behaviorSection.hapticFeedbackRow.setOnClickListener {
+            behaviorSection.hapticFeedbackSwitch.toggle()
+        }
+        behaviorSection.pageSwipeSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked != currentState.settings.pageSwipeEnabled) {
+                viewModel.setPageSwipeEnabled(checked)
+            }
+        }
+        behaviorSection.keepScreenOnSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked != currentState.settings.keepScreenOn) {
+                viewModel.setKeepScreenOn(checked)
+            }
+        }
+        behaviorSection.hapticFeedbackSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked != currentState.settings.hapticFeedbackEnabled) {
+                viewModel.setHapticFeedbackEnabled(checked)
+            }
+        }
+    }
+
+    private fun render(state: SettingsUiState) = with(binding) {
+        currentState = state
+        themeModeSummary.setText(state.settings.themeMode.labelRes())
+        canvasAppearanceSummary.setText(state.settings.canvasAppearance.labelRes())
+        defaultTemplateSummary.setText(state.settings.defaultPageTemplate.labelRes())
+        trashRetentionSummary.setText(state.trashRetention.labelRes())
+        behaviorSection.pageSwipeSwitch.isChecked = state.settings.pageSwipeEnabled
+        behaviorSection.keepScreenOnSwitch.isChecked = state.settings.keepScreenOn
+        behaviorSection.hapticFeedbackSwitch.isChecked = state.settings.hapticFeedbackEnabled
+    }
+
+    private fun showThemeModeDialog() {
+        val values = ThemeMode.entries
+        showSingleChoiceDialog(
+            R.string.theme_mode_title,
+            values.map { getString(it.labelRes()) },
+            values.indexOf(currentState.settings.themeMode),
+        ) { index ->
+            val mode = values[index]
+            viewModel.setThemeMode(mode)
+            AppCompatDelegate.setDefaultNightMode(mode.nightMode())
+        }
+    }
+
+    private fun showCanvasAppearanceDialog() {
+        val values = CanvasAppearance.entries
+        showSingleChoiceDialog(
+            R.string.canvas_appearance_title,
+            values.map { getString(it.labelRes()) },
+            values.indexOf(currentState.settings.canvasAppearance),
+        ) { viewModel.setCanvasAppearance(values[it]) }
+    }
+
+    private fun showDefaultTemplateDialog() {
+        val values = listOf(PageTemplate.BLANK, PageTemplate.LINED, PageTemplate.GRID)
+        showSingleChoiceDialog(
+            R.string.default_template_title,
+            values.map { getString(it.labelRes()) },
+            values.indexOf(currentState.settings.defaultPageTemplate),
+        ) { viewModel.setDefaultPageTemplate(values[it]) }
+    }
+
     private fun showRetentionDialog() {
-        val container = (requireActivity().application as NoteUpApplication).container
         val values = TrashRetention.entries
-        val labels = values.map { getString(it.labelRes()) }.toTypedArray()
-        val selected = values.indexOf(container.trashRetentionStore.current())
+        showSingleChoiceDialog(
+            R.string.trash_retention_title,
+            values.map { getString(it.labelRes()) },
+            values.indexOf(currentState.trashRetention),
+        ) { viewModel.setTrashRetention(values[it]) }
+    }
+
+    private fun showSingleChoiceDialog(
+        titleRes: Int,
+        labels: List<String>,
+        selected: Int,
+        onSelected: (Int) -> Unit,
+    ) {
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.trash_retention_title)
-            .setSingleChoiceItems(labels, selected) { dialog, which ->
-                container.trashRetentionStore.set(values[which])
-                container.trashCleanupService.request()
+            .setTitle(titleRes)
+            .setSingleChoiceItems(labels.toTypedArray(), selected) { dialog, which ->
+                onSelected(which)
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun TrashRetention.labelRes(): Int = when (this) {
+    private fun confirmReset() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.reset_settings_dialog_title)
+            .setMessage(R.string.reset_settings_dialog_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.reset) { _, _ ->
+                viewModel.reset()
+                Snackbar.make(binding.root, R.string.settings_reset_complete, Snackbar.LENGTH_SHORT).show()
+                AppCompatDelegate.setDefaultNightMode(ThemeMode.SYSTEM.nightMode())
+            }
+            .show()
+            .applyCriticalPositiveAction()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun renderVersion() {
+        val context = requireContext()
+        val version = context.packageManager
+            .getPackageInfo(context.packageName, 0)
+            .versionName
+            .orEmpty()
+        binding.appVersion.text = getString(R.string.app_version, version)
+    }
+
+    private fun ThemeMode.labelRes() = when (this) {
+        ThemeMode.SYSTEM -> R.string.theme_mode_system
+        ThemeMode.LIGHT -> R.string.theme_mode_light
+        ThemeMode.DARK -> R.string.theme_mode_dark
+    }
+
+    private fun CanvasAppearance.labelRes() = when (this) {
+        CanvasAppearance.WHITE_PAPER -> R.string.canvas_appearance_white
+        CanvasAppearance.DARK_PAPER -> R.string.canvas_appearance_dark
+    }
+
+    private fun PageTemplate.labelRes() = when (this) {
+        PageTemplate.BLANK -> R.string.template_blank
+        PageTemplate.LINED -> R.string.template_lined
+        PageTemplate.GRID -> R.string.template_grid
+    }
+
+    private fun TrashRetention.labelRes() = when (this) {
         TrashRetention.DAYS_7 -> R.string.trash_retention_7_days
         TrashRetention.DAYS_30 -> R.string.trash_retention_30_days
         TrashRetention.DAYS_90 -> R.string.trash_retention_90_days

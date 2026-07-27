@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -30,26 +31,27 @@ import com.google.android.material.textfield.TextInputLayout
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
+import com.kotlinsun.noteup.domain.model.AppSettings
+import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
 import com.kotlinsun.noteup.domain.model.EraserMode
-import com.kotlinsun.noteup.domain.model.HighlighterColor
-import com.kotlinsun.noteup.domain.model.HighlighterThickness
-import com.kotlinsun.noteup.domain.model.PenColor
-import com.kotlinsun.noteup.domain.model.PenThickness
-import com.kotlinsun.noteup.domain.model.PageTemplate
-import com.kotlinsun.noteup.domain.model.Page
-import com.kotlinsun.noteup.domain.model.Stroke
-import com.kotlinsun.noteup.domain.model.CanvasText
-import com.kotlinsun.noteup.domain.model.CanvasTextDraft
-import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.domain.model.ExportArtifact
 import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
+import com.kotlinsun.noteup.domain.model.HighlighterColor
+import com.kotlinsun.noteup.domain.model.HighlighterThickness
+import com.kotlinsun.noteup.domain.model.Page
+import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.PenColor
+import com.kotlinsun.noteup.domain.model.PenThickness
+import com.kotlinsun.noteup.domain.model.Stroke
+import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -60,6 +62,7 @@ class CanvasFragment : Fragment() {
     private var renderedTexts: List<CanvasText> = emptyList()
     private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
+    private var currentAppSettings = AppSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
     private var presentedArtifactPath: String? = null
     private var savingArtifact = false
@@ -85,7 +88,15 @@ class CanvasFragment : Fragment() {
     }
     private val pageAdapter by lazy {
         val store = (requireActivity().application as NoteUpApplication).container.pageThumbnailStore
-        PageThumbnailAdapter(store, viewModel::selectPage, ::confirmPageDeletion, viewModel::reorderPages)
+        PageThumbnailAdapter(
+            store,
+            onClick = {
+                viewModel.selectPage(it)
+                performHapticFeedback()
+            },
+            onDelete = ::confirmPageDeletion,
+            onOrderChanged = viewModel::reorderPages,
+        )
     }
 
     private val noteId: Long by lazy {
@@ -142,6 +153,7 @@ class CanvasFragment : Fragment() {
                 PageSwipeDirection.PREVIOUS -> viewModel.selectPreviousPage()
                 PageSwipeDirection.NEXT -> viewModel.selectNextPage()
             }
+            performHapticFeedback()
         }
         setupToolbar()
         setupPagePanel()
@@ -162,7 +174,7 @@ class CanvasFragment : Fragment() {
         penToolButton.setOnClickListener { selectDrawingTool(DrawingTool.PEN) }
         highlighterToolButton.setOnClickListener { selectDrawingTool(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { selectDrawingTool(DrawingTool.ERASER) }
-        lassoToolButton.setOnClickListener { viewModel.selectTool(DrawingTool.LASSO) }
+        lassoToolButton.setOnClickListener { selectDrawingTool(DrawingTool.LASSO) }
         shapeToolButton.setOnClickListener { showShapeMenu() }
         textToolButton.setOnClickListener { selectDrawingTool(DrawingTool.TEXT) }
         moreButton.setOnClickListener { showMoreMenu() }
@@ -181,8 +193,14 @@ class CanvasFragment : Fragment() {
         editTextButton.setOnClickListener {
             drawingCanvas.currentSelection().texts.singleOrNull()?.let(::showEditTextDialog)
         }
-        strokeEraserModeButton.setOnClickListener { viewModel.selectEraserMode(EraserMode.STROKE) }
-        areaEraserModeButton.setOnClickListener { viewModel.selectEraserMode(EraserMode.AREA) }
+        strokeEraserModeButton.setOnClickListener {
+            viewModel.selectEraserMode(EraserMode.STROKE)
+            performHapticFeedback()
+        }
+        areaEraserModeButton.setOnClickListener {
+            viewModel.selectEraserMode(EraserMode.AREA)
+            performHapticFeedback()
+        }
         blackColorButton.setOnClickListener { selectColorSlot(0) }
         blueColorButton.setOnClickListener { selectColorSlot(1) }
         redColorButton.setOnClickListener { selectColorSlot(2) }
@@ -190,10 +208,16 @@ class CanvasFragment : Fragment() {
         thinButton.setOnClickListener { selectThicknessSlot(0) }
         mediumButton.setOnClickListener { selectThicknessSlot(1) }
         thickButton.setOnClickListener { selectThicknessSlot(2) }
-        undoButton.setOnClickListener { viewModel.undo() }
-        redoButton.setOnClickListener { viewModel.redo() }
-        previousPageButton.setOnClickListener { viewModel.selectPreviousPage() }
-        nextPageButton.setOnClickListener { viewModel.selectNextPage() }
+        undoButton.setOnClickListener { viewModel.undo(); performHapticFeedback() }
+        redoButton.setOnClickListener { viewModel.redo(); performHapticFeedback() }
+        previousPageButton.setOnClickListener {
+            viewModel.selectPreviousPage()
+            performHapticFeedback()
+        }
+        nextPageButton.setOnClickListener {
+            viewModel.selectNextPage()
+            performHapticFeedback()
+        }
         addPageButton.setOnClickListener { showPageTemplateDialog() }
         zoomOutButton.setOnClickListener { drawingCanvas.adjustZoom(-ZOOM_STEP) }
         zoomResetButton.setOnClickListener { drawingCanvas.resetZoom() }
@@ -274,6 +298,11 @@ class CanvasFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.uiState.collect(::render) }
                 launch { viewModel.settings.collect(::renderSettings) }
+                launch {
+                    val store = (requireActivity().application as NoteUpApplication)
+                        .container.appSettingsStore
+                    store.settings.collect(::renderAppSettings)
+                }
                 launch {
                     viewModel.errors.collect {
                         Snackbar.make(binding.root, R.string.stroke_operation_error, Snackbar.LENGTH_SHORT).show()
@@ -489,6 +518,13 @@ class CanvasFragment : Fragment() {
         updateInputEnabled()
     }
 
+    private fun renderAppSettings(settings: AppSettings) = with(binding) {
+        currentAppSettings = settings
+        root.keepScreenOn = settings.keepScreenOn
+        drawingCanvas.isPageSwipeEnabled = settings.pageSwipeEnabled
+        drawingCanvas.canvasAppearance = settings.canvasAppearance
+    }
+
     private fun renderToolbarState() = with(binding) {
         val settings = currentSettings
         penToolButton.isChecked = settings.tool == DrawingTool.PEN
@@ -578,6 +614,7 @@ class CanvasFragment : Fragment() {
         } else {
             viewModel.selectPenColor(PenColor.entries[index])
         }
+        performHapticFeedback()
     }
 
     private fun selectThicknessSlot(index: Int) {
@@ -588,11 +625,13 @@ class CanvasFragment : Fragment() {
         } else {
             viewModel.selectPenThickness(PenThickness.entries[index])
         }
+        performHapticFeedback()
     }
 
     private fun selectDrawingTool(tool: DrawingTool) {
-        binding.drawingCanvas.clearSelection()
+        if (currentSettings.tool != tool) binding.drawingCanvas.clearSelection()
         viewModel.selectTool(tool)
+        performHapticFeedback()
     }
 
     private fun showNewTextDialog(x: Float, y: Float) {
@@ -667,18 +706,16 @@ class CanvasFragment : Fragment() {
             getString(R.string.template_lined),
             getString(R.string.template_grid),
         )
-        var selectedIndex = 0
+        val orderedTemplates = listOf(PageTemplate.BLANK, PageTemplate.LINED, PageTemplate.GRID)
+        var selectedIndex = orderedTemplates.indexOf(currentAppSettings.defaultPageTemplate)
+            .coerceAtLeast(0)
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.select_page_template)
             .setSingleChoiceItems(templates, selectedIndex) { _, which -> selectedIndex = which }
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.create) { _, _ ->
-                val template = when (selectedIndex) {
-                    1 -> PageTemplate.LINED
-                    2 -> PageTemplate.GRID
-                    else -> PageTemplate.BLANK
-                }
-                viewModel.createPage(template)
+                viewModel.createPage(orderedTemplates[selectedIndex])
+                performHapticFeedback()
             }
             .show()
     }
@@ -714,6 +751,11 @@ class CanvasFragment : Fragment() {
             !(state.isBusy && currentSettings.tool in setOf(
                 DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
             ))
+    }
+
+    private fun performHapticFeedback() {
+        if (!currentAppSettings.hapticFeedbackEnabled || _binding == null) return
+        binding.root.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
     }
 
     private fun renderPdfBackground(
@@ -807,6 +849,7 @@ class CanvasFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        binding.root.keepScreenOn = false
         pdfRenderGeneration += 1
         pdfRenderKey = null
         pdfDisplayedPageId = null

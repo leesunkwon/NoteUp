@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.savedstate.SavedStateRegistryOwner
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
+import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
@@ -144,10 +145,11 @@ class DashboardViewModel(
         repository.deleteNotebook(notebook.id)
     }
 
-    fun createNote(defaultTitle: String) = launchDataOperation {
-        val parentId = (currentFilter() as? DashboardFilter.NotebookFilter)?.notebookId
-        repository.createNote(defaultTitle, parentId)
-    }
+    fun createNote(defaultTitle: String, template: PageTemplate) =
+        launchDataOperation {
+            val parentId = (currentFilter() as? DashboardFilter.NotebookFilter)?.notebookId
+            repository.createNote(defaultTitle, parentId, template)
+        }
 
     fun renameNote(note: Note, title: String) = launchDataOperation {
         repository.renameNote(note.id, title.trim())

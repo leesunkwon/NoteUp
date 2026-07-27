@@ -52,6 +52,12 @@
 
     <color name="noteup_page">@color/seed_gray_00</color>
     <color name="noteup_template_line">@color/seed_gray_300</color>
+    <color name="noteup_dark_page">#FF1A1C20</color>
+    <color name="noteup_dark_template_line">#FF3C424C</color>
+    <color name="noteup_dark_pen_black">#FFF3F4F5</color>
+    <color name="noteup_dark_pen_blue">#FF76A7FF</color>
+    <color name="noteup_dark_pen_red">#FFFF8585</color>
+    <color name="noteup_dark_pen_green">#FF68C98A</color>
 
     <!-- Drawing colors are content data and intentionally independent of app chrome. -->
     <color name="pen_black">#202124</color>

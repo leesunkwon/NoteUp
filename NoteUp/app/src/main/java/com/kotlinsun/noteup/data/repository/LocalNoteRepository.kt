@@ -89,7 +89,11 @@ class LocalNoteRepository(
         notebookDao.delete(notebookId)
     }
 
-    override suspend fun createNote(title: String, notebookId: Long?): Long =
+    override suspend fun createNote(
+        title: String,
+        notebookId: Long?,
+        template: PageTemplate,
+    ): Long =
         database.withTransaction {
             val now = System.currentTimeMillis()
             val noteId = noteDao.insert(
@@ -104,7 +108,7 @@ class LocalNoteRepository(
                 PageEntity(
                     noteId = noteId,
                     pageIndex = 0,
-                    templateType = PageTemplate.BLANK.name,
+                    templateType = template.name,
                     createdAt = now,
                     updatedAt = now,
                 ),

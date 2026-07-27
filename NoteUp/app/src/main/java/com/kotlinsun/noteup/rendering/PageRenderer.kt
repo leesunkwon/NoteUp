@@ -14,7 +14,7 @@ class PageRenderer(
     private val textRenderer: CanvasTextRenderer = CanvasTextRenderer(),
 ) {
     private val templatePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(220, 224, 230)
+        color = DEFAULT_TEMPLATE_LINE_COLOR
         strokeWidth = 1f
     }
 
@@ -73,7 +73,9 @@ class PageRenderer(
         height: Int,
         density: Float,
         template: PageTemplate,
+        lineColor: Int = DEFAULT_TEMPLATE_LINE_COLOR,
     ) {
+        templatePaint.color = lineColor
         templatePaint.strokeWidth = density.coerceAtLeast(1f)
         when (template) {
             PageTemplate.BLANK -> Unit
@@ -96,5 +98,9 @@ class PageRenderer(
             canvas.drawLine(0f, y, width.toFloat(), y, templatePaint)
             y += spacing
         }
+    }
+
+    private companion object {
+        val DEFAULT_TEMPLATE_LINE_COLOR: Int = Color.rgb(220, 224, 230)
     }
 }

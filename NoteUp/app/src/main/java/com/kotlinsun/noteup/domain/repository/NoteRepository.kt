@@ -27,7 +27,11 @@ interface NoteRepository {
     suspend fun createNotebook(name: String): Long
     suspend fun renameNotebook(notebookId: Long, name: String)
     suspend fun deleteNotebook(notebookId: Long)
-    suspend fun createNote(title: String, notebookId: Long?): Long
+    suspend fun createNote(
+        title: String,
+        notebookId: Long?,
+        template: PageTemplate = PageTemplate.BLANK,
+    ): Long
     suspend fun renameNote(noteId: Long, title: String)
     suspend fun moveNote(noteId: Long, notebookId: Long?)
     suspend fun moveNoteToTrash(noteId: Long)

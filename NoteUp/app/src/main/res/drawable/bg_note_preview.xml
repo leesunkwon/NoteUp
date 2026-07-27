@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <corners android:radius="@dimen/seed_radius_r2" />
-    <solid android:color="@color/noteup_bg_layer_basement" />
+    <solid android:color="@color/noteup_page" />
     <stroke
         android:width="@dimen/hairline_width"
         android:color="@color/noteup_stroke_neutral_muted" />

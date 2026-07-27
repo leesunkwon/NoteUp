@@ -122,7 +122,9 @@ class DashboardFragment : Fragment() {
             )
         }
         newNoteButton.setOnClickListener {
-            viewModel.createNote(getString(R.string.default_note_title))
+            val template = (requireActivity().application as NoteUpApplication)
+                .container.appSettingsStore.current().defaultPageTemplate
+            viewModel.createNote(getString(R.string.default_note_title), template)
         }
         openSettingsButton.setOnClickListener {
             findNavController().navigate(R.id.action_dashboard_to_settings)

@@ -71,7 +71,7 @@
     <string name="zoom_reset">초기화</string>
     <string name="zoom_percentage">%1$d%%</string>
     <string name="zoom_percentage_default" formatted="false">100%</string>
-    <string name="add_page">+ 페이지 추가</string>
+    <string name="add_page">페이지 추가</string>
     <string name="page_indicator">%1$d / %2$d</string>
     <string name="select_page_template">페이지 속지 선택</string>
     <string name="template_blank">백지</string>
@@ -144,4 +144,31 @@
     <string name="pdf_import_storage_error">PDF를 저장하지 못했습니다. 저장 공간을 확인해 주세요.</string>
     <string name="pdf_page_load_error">PDF 페이지를 표시하지 못했습니다.</string>
     <string name="retry">재시도</string>
+    <string name="settings_section_display">화면</string>
+    <string name="settings_section_writing">필기</string>
+    <string name="settings_section_behavior">동작</string>
+    <string name="settings_section_storage">저장소</string>
+    <string name="settings_section_app">앱 정보</string>
+    <string name="theme_mode_title">앱 테마</string>
+    <string name="theme_mode_system">시스템 설정</string>
+    <string name="theme_mode_light">라이트</string>
+    <string name="theme_mode_dark">다크</string>
+    <string name="canvas_appearance_title">캔버스 표시</string>
+    <string name="canvas_appearance_white">흰색 종이 유지</string>
+    <string name="canvas_appearance_dark">화면 전용 다크 속지</string>
+    <string name="canvas_appearance_description">PDF와 내보내기 결과에는 적용되지 않습니다.</string>
+    <string name="default_template_title">새 페이지 기본 속지</string>
+    <string name="page_swipe_title">페이지 넘김 제스처</string>
+    <string name="page_swipe_description">캔버스를 좌우로 밀어 페이지를 이동합니다.</string>
+    <string name="keep_screen_on_title">필기 중 화면 켜짐 유지</string>
+    <string name="keep_screen_on_description">필기 화면을 보는 동안 화면이 꺼지지 않습니다.</string>
+    <string name="haptic_feedback_title">조작 진동</string>
+    <string name="haptic_feedback_description">도구 선택과 페이지 이동 시 진동으로 알려줍니다.</string>
+    <string name="reset_settings_title">사용자 설정 초기화</string>
+    <string name="reset_settings_description">노트와 필기 데이터는 삭제되지 않습니다.</string>
+    <string name="reset_settings_dialog_title">설정을 초기화할까요?</string>
+    <string name="reset_settings_dialog_message">테마와 필기 환경 설정이 기본값으로 돌아갑니다. 노트 데이터는 유지됩니다.</string>
+    <string name="reset">초기화</string>
+    <string name="settings_reset_complete">사용자 설정을 초기화했습니다.</string>
+    <string name="app_version">버전 %1$s</string>
 </resources>

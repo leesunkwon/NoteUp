@@ -53,6 +53,7 @@
     <dimen name="hairline_width">1dp</dimen>
     <dimen name="focus_stroke_width">2dp</dimen>
     <dimen name="settings_row_min_height">72dp</dimen>
+    <dimen name="settings_content_max_width">760dp</dimen>
     <dimen name="sidebar_width">280dp</dimen>
     <dimen name="sidebar_item_height">48dp</dimen>
     <dimen name="note_card_width">220dp</dimen>

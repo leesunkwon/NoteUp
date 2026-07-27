@@ -13,18 +13,20 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import com.kotlinsun.noteup.R
+import com.kotlinsun.noteup.domain.model.CanvasAppearance
+import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
 import com.kotlinsun.noteup.domain.model.EraserMode
 import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.StrokePoint
 import com.kotlinsun.noteup.domain.model.StrokeTool
-import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.rendering.CanvasTextRenderer
-import com.kotlinsun.noteup.rendering.StrokeRenderer
 import com.kotlinsun.noteup.rendering.PageRenderer
+import com.kotlinsun.noteup.rendering.StrokeRenderer
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -46,6 +48,19 @@ class DrawingCanvasView @JvmOverloads constructor(
     var onSelectionChanged: ((CanvasSelection) -> Unit)? = null
     var onSelectionTransformed: ((SelectionChange) -> Unit)? = null
     var onPageSwipe: ((PageSwipeDirection) -> Unit)? = null
+    var isPageSwipeEnabled: Boolean = true
+        set(value) {
+            field = value
+            if (!value) resetPageSwipe()
+        }
+    var canvasAppearance: CanvasAppearance = CanvasAppearance.WHITE_PAPER
+        set(value) {
+            if (field == value) return
+            field = value
+            clearAreaPreviewBitmap()
+            rebuildStrokeBitmap()
+            invalidate()
+        }
     var drawingSettings: DrawingSettings = DrawingSettings()
         set(value) {
             if (field.tool == DrawingTool.TEXT && value.tool != DrawingTool.TEXT) {
@@ -236,7 +251,7 @@ class DrawingCanvasView @JvmOverloads constructor(
             canvas.translate(pageRect.left, pageRect.top)
             strokes.drop(previousStrokes.size).forEach { stroke ->
                 renderer.draw(
-                    canvas, stroke.points, stroke.colorArgb, stroke.width,
+                    canvas, stroke.points, displayColor(stroke.colorArgb), stroke.width,
                     pageRect.width().toInt(), pageRect.height().toInt(),
                     resources.displayMetrics.density, stroke.tool,
                 )
@@ -674,7 +689,9 @@ class DrawingCanvasView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 val actionIndex = event.actionIndex
-                if (event.getToolType(actionIndex) == MotionEvent.TOOL_TYPE_FINGER) {
+                if (isPageSwipeEnabled &&
+                    event.getToolType(actionIndex) == MotionEvent.TOOL_TYPE_FINGER
+                ) {
                     pageSwipePointerId = event.getPointerId(actionIndex)
                     pageSwipeStartX = event.getX(actionIndex)
                     pageSwipeStartY = event.getY(actionIndex)
@@ -1101,12 +1118,13 @@ class DrawingCanvasView @JvmOverloads constructor(
             elements.sortedBy { it.first }.forEach { (_, element) ->
                 when (element) {
                     is Stroke -> renderer.draw(
-                        canvas, element.points, element.colorArgb, element.width,
+                        canvas, element.points, displayColor(element.colorArgb), element.width,
                         pageRect.width().toInt(), pageRect.height().toInt(),
                         resources.displayMetrics.density, element.tool,
                     )
                     is CanvasText -> textRenderer.draw(
-                        canvas, element, pageRect.width().toInt(), pageRect.height().toInt(),
+                        canvas, element.copy(colorArgb = displayColor(element.colorArgb)),
+                        pageRect.width().toInt(), pageRect.height().toInt(),
                         resources.displayMetrics.density,
                     )
                 }
@@ -1149,7 +1167,7 @@ class DrawingCanvasView @JvmOverloads constructor(
                 canvas.save()
                 canvas.translate(pageRect.left, pageRect.top)
                 renderer.draw(
-                    canvas, stroke.points, stroke.colorArgb, stroke.width,
+                    canvas, stroke.points, displayColor(stroke.colorArgb), stroke.width,
                     pageRect.width().toInt(), pageRect.height().toInt(),
                     resources.displayMetrics.density, stroke.tool,
                 )
@@ -1162,7 +1180,8 @@ class DrawingCanvasView @JvmOverloads constructor(
                 canvas.save()
                 canvas.translate(pageRect.left, pageRect.top)
                 textRenderer.draw(
-                    canvas, it, pageRect.width().toInt(), pageRect.height().toInt(),
+                    canvas, it.copy(colorArgb = displayColor(it.colorArgb)),
+                    pageRect.width().toInt(), pageRect.height().toInt(),
                     resources.displayMetrics.density,
                 )
                 canvas.restore()
@@ -1206,13 +1225,25 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     private fun drawTemplate(canvas: Canvas) {
-        canvas.drawColor(context.getColor(R.color.noteup_page))
         val background = pdfBackgroundBitmap
         if (background == null) {
+            canvas.drawColor(
+                context.getColor(
+                    if (usesDarkPaper()) R.color.noteup_dark_page else R.color.noteup_page,
+                ),
+            )
             pageRenderer.drawTemplate(
                 canvas, width, height, resources.displayMetrics.density, pageTemplate,
+                context.getColor(
+                    if (usesDarkPaper()) {
+                        R.color.noteup_dark_template_line
+                    } else {
+                        R.color.noteup_template_line
+                    },
+                ),
             )
         } else {
+            canvas.drawColor(context.getColor(R.color.noteup_page))
             canvas.drawBitmap(background, null, pageRenderer.fitCenterRect(width, height, background), null)
         }
     }
@@ -1222,11 +1253,31 @@ class DrawingCanvasView @JvmOverloads constructor(
         canvas.save()
         canvas.translate(pageRect.left, pageRect.top)
         renderer.draw(
-            canvas, stroke.points, stroke.colorArgb, stroke.width,
+            canvas, stroke.points, displayColor(stroke.colorArgb), stroke.width,
             pageRect.width().toInt(), pageRect.height().toInt(),
             resources.displayMetrics.density, stroke.tool,
         )
         canvas.restore()
+    }
+
+    private fun usesDarkPaper(): Boolean =
+        canvasAppearance == CanvasAppearance.DARK_PAPER && pdfBackgroundBitmap == null
+
+    private fun displayColor(colorArgb: Int): Int {
+        if (!usesDarkPaper()) return colorArgb
+        val mapped = when (colorArgb) {
+            PenColor.BLACK.argb, Color.BLACK -> context.getColor(R.color.noteup_dark_pen_black)
+            PenColor.BLUE.argb -> context.getColor(R.color.noteup_dark_pen_blue)
+            PenColor.RED.argb -> context.getColor(R.color.noteup_dark_pen_red)
+            PenColor.GREEN.argb -> context.getColor(R.color.noteup_dark_pen_green)
+            else -> return colorArgb
+        }
+        return Color.argb(
+            Color.alpha(colorArgb),
+            Color.red(mapped),
+            Color.green(mapped),
+            Color.blue(mapped),
+        )
     }
 
     private fun pageContentRect(): RectF {
