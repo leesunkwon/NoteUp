@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.domain.model.CanvasAppearance
+import com.kotlinsun.noteup.domain.model.CanvasInputMode
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
@@ -52,6 +53,15 @@ class DrawingCanvasView @JvmOverloads constructor(
         set(value) {
             field = value
             if (!value) resetPageSwipe()
+        }
+    var canvasInputMode: CanvasInputMode = CanvasInputMode.STYLUS_ONLY
+        set(value) {
+            if (field == value) return
+            cancelActiveStroke()
+            resetPageSwipe()
+            isTouchGestureActive = false
+            parent?.requestDisallowInterceptTouchEvent(false)
+            field = value
         }
     var canvasAppearance: CanvasAppearance = CanvasAppearance.WHITE_PAPER
         set(value) {
@@ -94,6 +104,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var areaPreviewBitmap: Bitmap? = null
     private val areaPreviewDirtyBounds = RectF()
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
+    private var activeInputIsFinger = false
     private val activePoints = mutableListOf<StrokePoint>()
     private val activeBounds = RectF()
     private var activeSettings = DrawingSettings()
@@ -308,6 +319,7 @@ class DrawingCanvasView @JvmOverloads constructor(
             rebuildStrokeBitmap()
         }
         resetActiveInput()
+        parent?.requestDisallowInterceptTouchEvent(false)
         invalidateDirtyBounds(dirtyBounds)
     }
 
@@ -377,7 +389,25 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (drawingSettings.tool == DrawingTool.TEXT && !hasHardwareEraser) {
             return handleTextToolEvent(event)
         }
+        if (activePointerId != MotionEvent.INVALID_POINTER_ID &&
+            activeInputIsFinger && event.actionMasked == MotionEvent.ACTION_POINTER_DOWN
+        ) {
+            val newPointerType = event.getToolType(event.actionIndex)
+            cancelActiveStroke()
+            return if (isStylusInput(newPointerType)) {
+                startInput(event)
+            } else {
+                handleTouchGesture(event)
+            }
+        }
         if (activePointerId == MotionEvent.INVALID_POINTER_ID && !containsStylusInput(event)) {
+            if (canvasInputMode == CanvasInputMode.STYLUS_AND_TOUCH &&
+                event.actionMasked == MotionEvent.ACTION_DOWN &&
+                event.getToolType(event.actionIndex) == MotionEvent.TOOL_TYPE_FINGER
+            ) {
+                scaleDetector.onTouchEvent(event)
+                return startInput(event)
+            }
             return handleTouchGesture(event)
         }
         return when (event.actionMasked) {
@@ -398,7 +428,10 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun startInput(event: MotionEvent): Boolean {
         val actionIndex = event.actionIndex
-        if (!isStylusInput(event.getToolType(actionIndex)) || width == 0 || height == 0) {
+        val toolType = event.getToolType(actionIndex)
+        val acceptsFinger = canvasInputMode == CanvasInputMode.STYLUS_AND_TOUCH &&
+            toolType == MotionEvent.TOOL_TYPE_FINGER
+        if ((!isStylusInput(toolType) && !acceptsFinger) || width == 0 || height == 0) {
             return false
         }
         suppressStylusUntilUp = false
@@ -408,6 +441,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         val contentY = toContentY(screenY)
         if (!pageContentRect().contains(contentX, contentY)) return false
         activePointerId = event.getPointerId(actionIndex)
+        activeInputIsFinger = toolType == MotionEvent.TOOL_TYPE_FINGER
         // Hardware erasing changes only this gesture snapshot, not the persisted toolbar tool.
         temporaryEraserActive = isHardwareEraser(event, actionIndex) &&
             drawingSettings.tool != DrawingTool.ERASER
@@ -448,7 +482,7 @@ class DrawingCanvasView @JvmOverloads constructor(
             eraseAt(contentX, contentY)
             updateAreaPreviewIfNeeded()
         } else {
-            addPoint(contentX, contentY, event.getPressure(actionIndex), event.eventTime)
+            addPoint(contentX, contentY, inputPressure(event.getPressure(actionIndex)), event.eventTime)
         }
         parent?.requestDisallowInterceptTouchEvent(true)
         invalidateDirtySegment(event.x, event.y, event.x, event.y)
@@ -535,7 +569,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         val contentX = toContentX(x)
         val contentY = toContentY(y)
         if (activeSettings.tool == DrawingTool.ERASER) eraseAt(contentX, contentY)
-        else addPoint(contentX, contentY, pressure, eventTime)
+        else addPoint(contentX, contentY, inputPressure(pressure), eventTime)
         activeBounds.union(x, y)
         invalidateDirtySegment(lastX, lastY, x, y)
         lastX = x
@@ -895,6 +929,9 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun isStylusInput(toolType: Int): Boolean =
         toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
 
+    private fun inputPressure(value: Float): Float =
+        if (activeInputIsFinger) DEFAULT_TOUCH_PRESSURE else value
+
     private fun isHardwareEraser(event: MotionEvent, pointerIndex: Int): Boolean =
         event.getToolType(pointerIndex) == MotionEvent.TOOL_TYPE_ERASER ||
             (event.buttonState and STYLUS_ERASER_BUTTONS) != 0
@@ -973,7 +1010,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun activeDraft(points: List<StrokePoint>): StrokeDraft = when (activeSettings.tool) {
         DrawingTool.HIGHLIGHTER -> StrokeDraft(
             StrokeTool.HIGHLIGHTER,
-            activeSettings.highlighter.color.argb,
+            activeSettings.highlighter.colorArgb,
             activeSettings.highlighter.thickness.widthDp,
             points,
         )
@@ -983,13 +1020,13 @@ class DrawingCanvasView @JvmOverloads constructor(
                 DrawingTool.RECTANGLE -> StrokeTool.RECTANGLE
                 else -> StrokeTool.CIRCLE
             },
-            activeSettings.pen.color.argb,
+            activeSettings.pen.colorArgb,
             activeSettings.pen.thickness.widthDp,
             shapePoints(points),
         )
         else -> StrokeDraft(
             StrokeTool.PEN,
-            activeSettings.pen.color.argb,
+            activeSettings.pen.colorArgb,
             activeSettings.pen.thickness.widthDp,
             points,
         )
@@ -1385,6 +1422,7 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun resetActiveInput(clearAreaPreview: Boolean = true) {
         activePointerId = MotionEvent.INVALID_POINTER_ID
+        activeInputIsFinger = false
         temporaryEraserActive = false
         suppressStylusUntilUp = false
         activePoints.clear()
@@ -1415,6 +1453,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val PAGE_SWIPE_SLOP_MULTIPLIER = 4
         const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
         const val PAGE_SWIPE_DIRECTION_RATIO = 1.25f
+        const val DEFAULT_TOUCH_PRESSURE = 0.5f
         val STYLUS_ERASER_BUTTONS =
             MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY
     }

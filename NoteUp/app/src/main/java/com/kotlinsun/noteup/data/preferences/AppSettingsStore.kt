@@ -3,6 +3,7 @@ package com.kotlinsun.noteup.data.preferences
 import android.content.Context
 import com.kotlinsun.noteup.domain.model.AppSettings
 import com.kotlinsun.noteup.domain.model.CanvasAppearance
+import com.kotlinsun.noteup.domain.model.CanvasInputMode
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,10 @@ class AppSettingsStore(context: Context) {
 
     fun setCanvasAppearance(value: CanvasAppearance) = update {
         copy(canvasAppearance = value)
+    }
+
+    fun setCanvasInputMode(value: CanvasInputMode) = update {
+        copy(canvasInputMode = value)
     }
 
     fun setDefaultPageTemplate(value: PageTemplate) = update {
@@ -46,6 +51,7 @@ class AppSettingsStore(context: Context) {
         preferences.edit()
             .putString(KEY_THEME_MODE, updated.themeMode.name)
             .putString(KEY_CANVAS_APPEARANCE, updated.canvasAppearance.name)
+            .putString(KEY_CANVAS_INPUT_MODE, updated.canvasInputMode.name)
             .putString(KEY_DEFAULT_PAGE_TEMPLATE, updated.defaultPageTemplate.name)
             .putBoolean(KEY_PAGE_SWIPE, updated.pageSwipeEnabled)
             .putBoolean(KEY_KEEP_SCREEN_ON, updated.keepScreenOn)
@@ -59,6 +65,10 @@ class AppSettingsStore(context: Context) {
         canvasAppearance = enumValueOrDefault(
             KEY_CANVAS_APPEARANCE,
             CanvasAppearance.WHITE_PAPER,
+        ),
+        canvasInputMode = enumValueOrDefault(
+            KEY_CANVAS_INPUT_MODE,
+            CanvasInputMode.STYLUS_ONLY,
         ),
         defaultPageTemplate = enumValueOrDefault(
             KEY_DEFAULT_PAGE_TEMPLATE,
@@ -78,6 +88,7 @@ class AppSettingsStore(context: Context) {
         const val PREFERENCES_NAME = "app_settings"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_CANVAS_APPEARANCE = "canvas_appearance"
+        const val KEY_CANVAS_INPUT_MODE = "canvas_input_mode"
         const val KEY_DEFAULT_PAGE_TEMPLATE = "default_page_template"
         const val KEY_PAGE_SWIPE = "page_swipe_enabled"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"

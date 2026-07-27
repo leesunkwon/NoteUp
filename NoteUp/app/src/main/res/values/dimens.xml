@@ -85,4 +85,7 @@
     <dimen name="tool_preview_medium">4dp</dimen>
     <dimen name="tool_preview_thick">7dp</dimen>
     <dimen name="selection_toolbar_margin">8dp</dimen>
+    <dimen name="color_picker_height">232dp</dimen>
+    <dimen name="color_preview_height">44dp</dimen>
+    <dimen name="color_manage_swatch_size">32dp</dimen>
 </resources>

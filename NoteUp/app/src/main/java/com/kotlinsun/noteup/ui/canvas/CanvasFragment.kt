@@ -23,6 +23,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -40,6 +41,9 @@ import com.google.android.material.textfield.TextInputLayout
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
+import com.kotlinsun.noteup.databinding.DialogColorPickerBinding
+import com.kotlinsun.noteup.databinding.DialogCustomColorPaletteBinding
+import com.kotlinsun.noteup.databinding.ItemCustomColorBinding
 import com.kotlinsun.noteup.databinding.PopupToolSettingsBinding
 import com.kotlinsun.noteup.domain.model.AppSettings
 import com.kotlinsun.noteup.domain.model.CanvasText
@@ -58,7 +62,9 @@ import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.PenThickness
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.TextSize
+import com.kotlinsun.noteup.domain.model.opaqueColor
 import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -85,6 +91,7 @@ class CanvasFragment : Fragment() {
     private var currentZoomScale = MIN_ZOOM
     private var toolSettingsPopup: PopupWindow? = null
     private var toolSettingsBinding: PopupToolSettingsBinding? = null
+    private var currentCustomColors: List<Int> = emptyList()
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -121,6 +128,7 @@ class CanvasFragment : Fragment() {
             noteId,
             container.noteRepository,
             container.drawingToolSettingsStore,
+            container.customColorPaletteStore,
             container.pageThumbnailStore,
             container.pageThumbnailService,
             container.noteExportService,
@@ -314,6 +322,12 @@ class CanvasFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch { viewModel.uiState.collect(::render) }
                 launch { viewModel.settings.collect(::renderSettings) }
+                launch {
+                    viewModel.customColors.collect { colors ->
+                        currentCustomColors = colors
+                        toolSettingsBinding?.let { renderToolSettingsPanel(it, currentSettings) }
+                    }
+                }
                 launch {
                     val store = (requireActivity().application as NoteUpApplication)
                         .container.appSettingsStore
@@ -521,6 +535,8 @@ class CanvasFragment : Fragment() {
         lineShapeButton.setOnClickListener { selectDrawingTool(DrawingTool.LINE) }
         rectangleShapeButton.setOnClickListener { selectDrawingTool(DrawingTool.RECTANGLE) }
         circleShapeButton.setOnClickListener { selectDrawingTool(DrawingTool.CIRCLE) }
+        addColorButton.setOnClickListener { showColorPickerDialog() }
+        manageColorsButton.setOnClickListener { showCustomColorPaletteDialog() }
         listOf(
             lineShapeButton to R.string.line_tool,
             rectangleShapeButton to R.string.rectangle_tool,
@@ -752,6 +768,7 @@ class CanvasFragment : Fragment() {
         root.keepScreenOn = settings.keepScreenOn
         drawingCanvas.isPageSwipeEnabled = settings.pageSwipeEnabled
         drawingCanvas.canvasAppearance = settings.canvasAppearance
+        drawingCanvas.canvasInputMode = settings.canvasInputMode
     }
 
     private fun renderToolbarState() = with(binding) {
@@ -813,7 +830,7 @@ class CanvasFragment : Fragment() {
         }
         if (settings.tool !in DRAWING_OPTION_TOOLS) return@with
         val isHighlighter = settings.tool == DrawingTool.HIGHLIGHTER
-        val selectedArgb = if (isHighlighter) settings.highlighter.color.argb else settings.pen.color.argb
+        val selectedArgb = if (isHighlighter) settings.highlighter.colorArgb else settings.pen.colorArgb
         currentColorSwatch.backgroundTintList = ColorStateList.valueOf(selectedArgb)
         currentThicknessPreview.backgroundTintList = ColorStateList.valueOf(selectedArgb)
         val optionIndex = when {
@@ -824,7 +841,16 @@ class CanvasFragment : Fragment() {
         currentThicknessPreview.layoutParams = currentThicknessPreview.layoutParams.apply {
             height = resources.getDimensionPixelSize(TOOL_PREVIEW_DIMENSIONS[optionIndex])
         }
-        val colorLabel = getString(colorLabelResources(isHighlighter)[selectedColorIndex(settings)])
+        val customColor = if (isHighlighter) {
+            settings.highlighter.customColorArgb
+        } else {
+            settings.pen.customColorArgb
+        }
+        val colorLabel = customColor?.let { colorHexLabel(it) } ?: getString(
+            colorLabelResources(isHighlighter)[
+                if (isHighlighter) settings.highlighter.color.ordinal else settings.pen.color.ordinal
+            ],
+        )
         val optionLabel = getString(
             if (settings.tool == DrawingTool.TEXT) TEXT_SIZE_LABELS[optionIndex]
             else THICKNESS_LABELS[optionIndex],
@@ -865,7 +891,13 @@ class CanvasFragment : Fragment() {
         areaEraserModeButton.isChecked = settings.eraserMode == EraserMode.AREA
         setSelectionState(strokeEraserModeButton, strokeEraserModeButton.isChecked)
         setSelectionState(areaEraserModeButton, areaEraserModeButton.isChecked)
-        if (showInkOptions) renderColorAndThickness(panel, settings)
+        if (showInkOptions) {
+            renderColorAndThickness(panel, settings)
+            renderCustomColors(panel, settings)
+        } else {
+            customColorScroll.isVisible = false
+            manageColorsButton.isVisible = false
+        }
     }
 
     private fun renderColorAndThickness(
@@ -888,11 +920,16 @@ class CanvasFragment : Fragment() {
             )
         }
         val selectedArgb = if (settings.tool == DrawingTool.HIGHLIGHTER) {
-            settings.highlighter.color.argb
-        } else settings.pen.color.argb
+            settings.highlighter.colorArgb
+        } else settings.pen.colorArgb
+        val hasCustomColor = if (settings.tool == DrawingTool.HIGHLIGHTER) {
+            settings.highlighter.customColorArgb != null
+        } else {
+            settings.pen.customColorArgb != null
+        }
         val strokeWidth = resources.getDimensionPixelSize(R.dimen.pen_selected_stroke_width)
         panelColorButtons(panel).zip(colors).forEach { (button, color) ->
-            val selected = color.first == selectedArgb
+            val selected = !hasCustomColor && color.first == selectedArgb
             button.backgroundTintList = ColorStateList.valueOf(requireContext().getColor(color.second))
             button.contentDescription = getString(color.third)
             button.strokeWidth = if (selected) strokeWidth else 0
@@ -935,10 +972,6 @@ class CanvasFragment : Fragment() {
         }
     }
 
-    private fun selectedColorIndex(settings: DrawingSettings): Int = if (
-        settings.tool == DrawingTool.HIGHLIGHTER
-    ) settings.highlighter.color.ordinal else settings.pen.color.ordinal
-
     private fun colorLabelResources(isHighlighter: Boolean): IntArray = if (isHighlighter) {
         intArrayOf(
             R.string.highlighter_color_yellow,
@@ -953,6 +986,179 @@ class CanvasFragment : Fragment() {
             R.string.pen_color_red,
             R.string.pen_color_green,
         )
+    }
+
+    private fun renderCustomColors(
+        panel: PopupToolSettingsBinding,
+        settings: DrawingSettings,
+    ) = with(panel) {
+        customColorOptions.removeAllViews()
+        val selectedCustomColor = if (settings.tool == DrawingTool.HIGHLIGHTER) {
+            settings.highlighter.customColorArgb
+        } else {
+            settings.pen.customColorArgb
+        }
+        currentCustomColors.forEach { color ->
+            val button = layoutInflater.inflate(
+                R.layout.item_custom_color_swatch,
+                customColorOptions,
+                false,
+            ) as MaterialButton
+            val selected = selectedCustomColor != null &&
+                (selectedCustomColor and 0x00FFFFFF) == (color and 0x00FFFFFF)
+            button.backgroundTintList = ColorStateList.valueOf(color)
+            button.contentDescription = getString(R.string.custom_color, colorHexLabel(color))
+            button.isCheckable = true
+            button.isChecked = selected
+            button.strokeWidth = if (selected) {
+                resources.getDimensionPixelSize(R.dimen.pen_selected_stroke_width)
+            } else {
+                0
+            }
+            button.icon = if (selected) {
+                AppCompatResources.getDrawable(requireContext(), R.drawable.ic_check)
+            } else {
+                null
+            }
+            val checkColor = if (
+                ColorUtils.calculateContrast(Color.BLACK, color) >=
+                ColorUtils.calculateContrast(Color.WHITE, color)
+            ) Color.BLACK else Color.WHITE
+            button.iconTint = ColorStateList.valueOf(checkColor)
+            button.iconSize = resources.getDimensionPixelSize(R.dimen.tool_swatch_check_size)
+            button.setOnClickListener {
+                viewModel.selectCustomColor(color)
+                performHapticFeedback()
+            }
+            button.setOnLongClickListener {
+                confirmCustomColorDeletion(color)
+                true
+            }
+            setSelectionState(button, selected)
+            customColorOptions.addView(button)
+        }
+        customColorScroll.isVisible = currentCustomColors.isNotEmpty()
+        manageColorsButton.isVisible = currentCustomColors.isNotEmpty()
+    }
+
+    private fun showColorPickerDialog() {
+        val panel = DialogColorPickerBinding.inflate(layoutInflater)
+        val initialColor = opaqueColor(
+            if (currentSettings.tool == DrawingTool.HIGHLIGHTER) {
+                currentSettings.highlighter.colorArgb
+            } else {
+                currentSettings.pen.colorArgb
+            },
+        )
+        var updatingHex = false
+        panel.colorPicker.setColor(initialColor)
+        panel.currentColorPreview.backgroundTintList = ColorStateList.valueOf(initialColor)
+        panel.selectedColorPreview.backgroundTintList = ColorStateList.valueOf(initialColor)
+        panel.hexInput.setText(colorHex(initialColor))
+        panel.colorPicker.onColorChanged = { color ->
+            val normalized = opaqueColor(color)
+            panel.selectedColorPreview.backgroundTintList = ColorStateList.valueOf(normalized)
+            updatingHex = true
+            panel.hexInput.setText(colorHex(normalized))
+            panel.hexInput.setSelection(panel.hexInput.text?.length ?: 0)
+            updatingHex = false
+            panel.hexInputLayout.error = null
+        }
+        panel.hexInput.doAfterTextChanged { editable ->
+            if (updatingHex) return@doAfterTextChanged
+            parseColorHex(editable?.toString()).onSuccess { color ->
+                panel.hexInputLayout.error = null
+                panel.colorPicker.setColor(color)
+                panel.selectedColorPreview.backgroundTintList = ColorStateList.valueOf(color)
+            }
+        }
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.color_picker_title)
+            .setView(panel.root)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.apply_color, null)
+            .setNeutralButton(R.string.apply_and_save_color, null)
+            .create()
+        dialog.setOnShowListener {
+            fun apply(register: Boolean) {
+                parseColorHex(panel.hexInput.text?.toString())
+                    .onSuccess { color ->
+                        viewModel.selectCustomColor(color)
+                        if (register) viewModel.addCustomColor(color)
+                        performHapticFeedback()
+                        dialog.dismiss()
+                    }
+                    .onFailure {
+                        panel.hexInputLayout.error = getString(R.string.invalid_color_hex)
+                    }
+            }
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                apply(register = false)
+            }
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                apply(register = true)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showCustomColorPaletteDialog() {
+        val panel = DialogCustomColorPaletteBinding.inflate(layoutInflater)
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.custom_color_palette_title)
+            .setView(panel.root)
+            .setPositiveButton(R.string.close, null)
+            .create()
+
+        fun renderColors() {
+            panel.colorList.removeAllViews()
+            if (viewModel.customColors.value.isEmpty()) {
+                panel.colorList.addView(android.widget.TextView(requireContext()).apply {
+                    setText(R.string.custom_color_palette_empty)
+                    setTextAppearance(R.style.TextAppearance_NoteUp_Body)
+                    setPadding(0, resources.getDimensionPixelSize(R.dimen.spacing_medium), 0, 0)
+                })
+                return
+            }
+            viewModel.customColors.value.forEach { color ->
+                val row = ItemCustomColorBinding.inflate(layoutInflater, panel.colorList, false)
+                row.colorSwatch.backgroundTintList = ColorStateList.valueOf(color)
+                row.colorHex.text = colorHexLabel(color)
+                row.deleteButton.setOnClickListener {
+                    confirmCustomColorDeletion(color, ::renderColors)
+                }
+                panel.colorList.addView(row.root)
+            }
+        }
+        renderColors()
+        dialog.show()
+    }
+
+    private fun confirmCustomColorDeletion(color: Int, onDeleted: () -> Unit = {}) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.delete_custom_color_title)
+            .setMessage(getString(R.string.delete_custom_color_message, colorHexLabel(color)))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                viewModel.removeCustomColor(color)
+                onDeleted()
+            }
+            .show()
+            .applyCriticalPositiveAction()
+    }
+
+    private fun colorHex(color: Int): String = String.format(
+        Locale.US,
+        "%06X",
+        color and 0x00FFFFFF,
+    )
+
+    private fun colorHexLabel(color: Int): String = "#${colorHex(color)}"
+
+    private fun parseColorHex(value: String?): Result<Int> = runCatching {
+        val normalized = value.orEmpty().trim().removePrefix("#")
+        require(normalized.length == COLOR_HEX_LENGTH)
+        opaqueColor(normalized.toLong(COLOR_HEX_RADIX).toInt())
     }
 
     private fun toolSettingsTitleResource(tool: DrawingTool): Int = when (tool) {
@@ -1048,7 +1254,7 @@ class CanvasFragment : Fragment() {
                     y = y,
                     boxWidth = DEFAULT_TEXT_WIDTH,
                     content = content,
-                    colorArgb = currentSettings.pen.color.argb,
+                    colorArgb = currentSettings.pen.colorArgb,
                     textSizeSp = currentSettings.textSize.sizeSp,
                 ),
             )
@@ -1293,6 +1499,8 @@ class CanvasFragment : Fragment() {
         const val MAX_ZOOM = 4f
         const val ZOOM_STEP = 0.25f
         const val ZOOM_EPSILON = 0.001f
+        const val COLOR_HEX_LENGTH = 6
+        const val COLOR_HEX_RADIX = 16
         const val MORE_EXPORT_ID = 10
         const val MORE_SHORTCUTS_ID = 11
         const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"

@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.kotlinsun.noteup.data.local.DatabaseMigrations
 import com.kotlinsun.noteup.data.local.NoteUpDatabase
 import com.kotlinsun.noteup.data.preferences.AppSettingsStore
+import com.kotlinsun.noteup.data.preferences.CustomColorPaletteStore
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.data.repository.LocalNoteRepository
 import com.kotlinsun.noteup.domain.repository.NoteRepository
@@ -50,6 +51,7 @@ class AppContainer(
         noteRepository, trashRetentionStore, pageThumbnailService, pdfDocumentStore, pdfPageRenderStore,
     ).also { it.request() }
     val drawingToolSettingsStore = DrawingToolSettingsStore(context)
+    val customColorPaletteStore = CustomColorPaletteStore(context)
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {

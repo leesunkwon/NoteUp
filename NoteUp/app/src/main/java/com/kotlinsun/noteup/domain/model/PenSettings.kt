@@ -3,7 +3,10 @@ package com.kotlinsun.noteup.domain.model
 data class PenSettings(
     val color: PenColor = PenColor.BLACK,
     val thickness: PenThickness = PenThickness.MEDIUM,
-)
+    val customColorArgb: Int? = null,
+) {
+    val colorArgb: Int get() = customColorArgb ?: color.argb
+}
 
 data class DrawingSettings(
     val tool: DrawingTool = DrawingTool.PEN,
@@ -18,7 +21,14 @@ enum class EraserMode { STROKE, AREA }
 data class HighlighterSettings(
     val color: HighlighterColor = HighlighterColor.YELLOW,
     val thickness: HighlighterThickness = HighlighterThickness.MEDIUM,
-)
+    val customColorArgb: Int? = null,
+) {
+    val colorArgb: Int get() = customColorArgb ?: color.argb
+}
+
+fun opaqueColor(argb: Int): Int = argb or 0xFF000000.toInt()
+
+fun highlighterColor(rgb: Int): Int = (rgb and 0x00FFFFFF) or 0x66000000
 
 enum class DrawingTool {
     PEN,

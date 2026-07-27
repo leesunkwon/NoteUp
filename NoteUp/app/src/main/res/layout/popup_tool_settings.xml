@@ -107,7 +107,39 @@
                 style="@style/Widget.NoteUp.Button.ColorSwatch"
                 android:contentDescription="@string/pen_color_green"
                 app:backgroundTint="@color/pen_green" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/add_color_button"
+                style="@style/Widget.NoteUp.Button.IconUtility"
+                android:layout_width="@dimen/control_height"
+                android:layout_height="@dimen/control_height"
+                android:contentDescription="@string/add_custom_color"
+                app:icon="@drawable/ic_add" />
         </LinearLayout>
+
+        <HorizontalScrollView
+            android:id="@+id/custom_color_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_extra_small"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/custom_color_options"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/manage_colors_button"
+            style="@style/Widget.NoteUp.Button.Utility"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_extra_small"
+            android:text="@string/manage_custom_colors"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/thickness_label"

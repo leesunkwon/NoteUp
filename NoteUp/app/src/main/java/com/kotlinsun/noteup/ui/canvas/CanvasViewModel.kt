@@ -1,13 +1,14 @@
 package com.kotlinsun.noteup.ui.canvas
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import android.net.Uri
-import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.data.export.NoteExportService
 import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import com.kotlinsun.noteup.data.preferences.CustomColorPaletteStore
+import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.domain.model.DrawingSettings
@@ -24,6 +25,8 @@ import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.TextSize
+import com.kotlinsun.noteup.domain.model.highlighterColor
+import com.kotlinsun.noteup.domain.model.opaqueColor
 import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
 import com.kotlinsun.noteup.domain.model.Note
@@ -56,6 +59,7 @@ class CanvasViewModel(
     private val noteId: Long,
     private val repository: NoteRepository,
     private val settingsStore: DrawingToolSettingsStore,
+    private val customColorPaletteStore: CustomColorPaletteStore,
     private val thumbnailStore: PageThumbnailStore,
     private val thumbnailService: PageThumbnailService,
     private val exportService: NoteExportService,
@@ -81,6 +85,7 @@ class CanvasViewModel(
     val exportState = _exportState.asStateFlow()
     private val _settings = MutableStateFlow(settingsStore.load())
     val settings = _settings.asStateFlow()
+    val customColors = customColorPaletteStore.colors
     private val _errors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val errors: Flow<Unit> = _errors
     private val _events = MutableSharedFlow<CanvasEvent>(extraBufferCapacity = 8)
@@ -367,18 +372,45 @@ class CanvasViewModel(
     fun selectTool(tool: DrawingTool) = updateSettings(_settings.value.copy(tool = tool))
     fun selectEraserMode(mode: EraserMode) = updateSettings(_settings.value.copy(eraserMode = mode))
     fun selectPenColor(color: PenColor) = updateSettings(
-        _settings.value.copy(pen = _settings.value.pen.copy(color = color)),
+        _settings.value.copy(
+            pen = _settings.value.pen.copy(color = color, customColorArgb = null),
+        ),
     )
     fun selectPenThickness(thickness: PenThickness) = updateSettings(
         _settings.value.copy(pen = _settings.value.pen.copy(thickness = thickness)),
     )
     fun selectHighlighterColor(color: HighlighterColor) = updateSettings(
-        _settings.value.copy(highlighter = _settings.value.highlighter.copy(color = color)),
+        _settings.value.copy(
+            highlighter = _settings.value.highlighter.copy(color = color, customColorArgb = null),
+        ),
     )
     fun selectHighlighterThickness(thickness: HighlighterThickness) = updateSettings(
         _settings.value.copy(highlighter = _settings.value.highlighter.copy(thickness = thickness)),
     )
     fun selectTextSize(size: TextSize) = updateSettings(_settings.value.copy(textSize = size))
+
+    fun selectCustomColor(color: Int) {
+        val settings = _settings.value
+        if (settings.tool == DrawingTool.HIGHLIGHTER) {
+            updateSettings(
+                settings.copy(
+                    highlighter = settings.highlighter.copy(
+                        customColorArgb = highlighterColor(color),
+                    ),
+                ),
+            )
+        } else {
+            updateSettings(
+                settings.copy(
+                    pen = settings.pen.copy(customColorArgb = opaqueColor(color)),
+                ),
+            )
+        }
+    }
+
+    fun addCustomColor(color: Int) = customColorPaletteStore.add(color)
+
+    fun removeCustomColor(color: Int) = customColorPaletteStore.remove(color)
 
     private suspend fun processOperation(operation: CanvasOperation) {
         runCatching {
@@ -806,6 +838,7 @@ class CanvasViewModel(
         private val noteId: Long,
         private val repository: NoteRepository,
         private val settingsStore: DrawingToolSettingsStore,
+        private val customColorPaletteStore: CustomColorPaletteStore,
         private val thumbnailStore: PageThumbnailStore,
         private val thumbnailService: PageThumbnailService,
         private val exportService: NoteExportService,
@@ -815,7 +848,8 @@ class CanvasViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             CanvasViewModel(
-                noteId, repository, settingsStore, thumbnailStore, thumbnailService, exportService,
+                noteId, repository, settingsStore, customColorPaletteStore,
+                thumbnailStore, thumbnailService, exportService,
                 pdfDocumentStore, pdfPageRenderStore,
             ) as T
     }
