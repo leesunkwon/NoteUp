@@ -148,6 +148,17 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     fun currentSelection(): CanvasSelection = selection
 
+    fun selectionBoundsInView(): RectF? = if (selectionBounds.isEmpty) {
+        null
+    } else {
+        RectF(
+            selectionBounds.left * viewport.scale + viewport.offsetX,
+            selectionBounds.top * viewport.scale + viewport.offsetY,
+            selectionBounds.right * viewport.scale + viewport.offsetX,
+            selectionBounds.bottom * viewport.scale + viewport.offsetY,
+        )
+    }
+
     fun selectElements(value: CanvasSelection) {
         selection = value
         updateSelectionBounds()

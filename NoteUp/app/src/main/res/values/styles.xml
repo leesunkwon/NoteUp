@@ -116,6 +116,23 @@
         <item name="iconTint">@color/noteup_control_text</item>
     </style>
 
+    <style name="Widget.NoteUp.Button.ColorSwatch" parent="Widget.Material3.Button">
+        <item name="android:layout_width">@dimen/control_height</item>
+        <item name="android:layout_height">@dimen/control_height</item>
+        <item name="android:minWidth">@dimen/control_height</item>
+        <item name="android:minHeight">@dimen/control_height</item>
+        <item name="android:insetLeft">10dp</item>
+        <item name="android:insetTop">10dp</item>
+        <item name="android:insetRight">10dp</item>
+        <item name="android:insetBottom">10dp</item>
+        <item name="cornerRadius">@dimen/chip_corner_radius</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconSize">@dimen/tool_swatch_check_size</item>
+        <item name="strokeColor">@color/noteup_stroke_brand</item>
+    </style>
+
     <style name="Widget.NoteUp.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
         <item name="boxBackgroundColor">@color/noteup_bg_layer_default</item>
         <item name="boxCornerRadiusTopStart">@dimen/seed_radius_r3</item>
