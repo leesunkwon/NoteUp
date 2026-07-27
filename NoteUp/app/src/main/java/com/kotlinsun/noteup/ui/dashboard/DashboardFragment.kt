@@ -127,13 +127,14 @@ class DashboardFragment : Fragment() {
             viewModel.createNote(getString(R.string.default_note_title), template)
         }
         openSettingsButton.setOnClickListener {
+            closeNavigation(animate = false)
             findNavController().navigate(R.id.action_dashboard_to_settings)
         }
     }
 
-    private fun closeNavigation() {
+    private fun closeNavigation(animate: Boolean = true) {
         if (resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            binding.dashboardDrawer.closeDrawer(GravityCompat.START)
+            binding.dashboardDrawer.closeDrawer(GravityCompat.START, animate)
         }
     }
 
