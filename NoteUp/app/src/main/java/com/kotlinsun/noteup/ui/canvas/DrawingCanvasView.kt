@@ -131,6 +131,8 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var lastTextTapAt = 0L
     private var lastTextTapX = 0f
     private var lastTextTapY = 0f
+    private var temporaryEraserActive = false
+    private var suppressStylusUntilUp = false
 
     fun setTexts(texts: List<CanvasText>) {
         storedTexts.clear()
@@ -340,8 +342,31 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isInputEnabled) return false
-        if (drawingSettings.tool == DrawingTool.TEXT) return handleTextToolEvent(event)
-        if (activePointerId == MotionEvent.INVALID_POINTER_ID && !containsStylus(event)) {
+        if (suppressStylusUntilUp) {
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_POINTER_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) suppressStylusUntilUp = false
+            return true
+        }
+        val hasHardwareEraser = containsHardwareEraser(event)
+        val wantsTemporaryEraser = hasHardwareEraser && drawingSettings.tool != DrawingTool.ERASER
+        val isHardwareToolTransition = event.actionMasked == MotionEvent.ACTION_MOVE ||
+            event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS ||
+            event.actionMasked == MotionEvent.ACTION_BUTTON_RELEASE
+        if (activePointerId != MotionEvent.INVALID_POINTER_ID &&
+            temporaryEraserActive != wantsTemporaryEraser &&
+            isHardwareToolTransition
+        ) {
+            finishInput(event)
+            if (wantsTemporaryEraser) return startInput(event)
+            suppressStylusUntilUp = true
+            return true
+        }
+        if (drawingSettings.tool == DrawingTool.TEXT && !hasHardwareEraser) {
+            return handleTextToolEvent(event)
+        }
+        if (activePointerId == MotionEvent.INVALID_POINTER_ID && !containsStylusInput(event)) {
             return handleTouchGesture(event)
         }
         return when (event.actionMasked) {
@@ -362,16 +387,24 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun startInput(event: MotionEvent): Boolean {
         val actionIndex = event.actionIndex
-        if (event.getToolType(actionIndex) != MotionEvent.TOOL_TYPE_STYLUS || width == 0 || height == 0) {
+        if (!isStylusInput(event.getToolType(actionIndex)) || width == 0 || height == 0) {
             return false
         }
+        suppressStylusUntilUp = false
         val screenX = event.getX(actionIndex)
         val screenY = event.getY(actionIndex)
         val contentX = toContentX(screenX)
         val contentY = toContentY(screenY)
         if (!pageContentRect().contains(contentX, contentY)) return false
         activePointerId = event.getPointerId(actionIndex)
-        activeSettings = drawingSettings
+        // Hardware erasing changes only this gesture snapshot, not the persisted toolbar tool.
+        temporaryEraserActive = isHardwareEraser(event, actionIndex) &&
+            drawingSettings.tool != DrawingTool.ERASER
+        activeSettings = if (temporaryEraserActive) {
+            drawingSettings.copy(tool = DrawingTool.ERASER)
+        } else {
+            drawingSettings
+        }
         strokeStartedAt = event.eventTime
         activePoints.clear()
         erasedInGesture.clear()
@@ -842,8 +875,18 @@ class DrawingCanvasView @JvmOverloads constructor(
         return x / event.pointerCount to y / event.pointerCount
     }
 
-    private fun containsStylus(event: MotionEvent): Boolean =
-        (0 until event.pointerCount).any { event.getToolType(it) == MotionEvent.TOOL_TYPE_STYLUS }
+    private fun containsStylusInput(event: MotionEvent): Boolean =
+        (0 until event.pointerCount).any { isStylusInput(event.getToolType(it)) }
+
+    private fun containsHardwareEraser(event: MotionEvent): Boolean =
+        (0 until event.pointerCount).any { isHardwareEraser(event, it) }
+
+    private fun isStylusInput(toolType: Int): Boolean =
+        toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
+
+    private fun isHardwareEraser(event: MotionEvent, pointerIndex: Int): Boolean =
+        event.getToolType(pointerIndex) == MotionEvent.TOOL_TYPE_ERASER ||
+            (event.buttonState and STYLUS_ERASER_BUTTONS) != 0
 
     private fun toContentX(screenX: Float) = (screenX - viewport.offsetX) / viewport.scale
     private fun toContentY(screenY: Float) = (screenY - viewport.offsetY) / viewport.scale
@@ -1331,6 +1374,8 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun resetActiveInput(clearAreaPreview: Boolean = true) {
         activePointerId = MotionEvent.INVALID_POINTER_ID
+        temporaryEraserActive = false
+        suppressStylusUntilUp = false
         activePoints.clear()
         erasedInGesture.clear()
         eraserPath.clear()
@@ -1359,6 +1404,8 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val PAGE_SWIPE_SLOP_MULTIPLIER = 4
         const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
         const val PAGE_SWIPE_DIRECTION_RATIO = 1.25f
+        val STYLUS_ERASER_BUTTONS =
+            MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY
     }
 
     private enum class SelectionTransformMode { NONE, MOVE, RESIZE }

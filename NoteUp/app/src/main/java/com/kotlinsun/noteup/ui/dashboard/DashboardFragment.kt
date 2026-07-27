@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.PopupMenu
 import androidx.core.os.bundleOf
 import androidx.core.view.GravityCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
@@ -169,6 +170,9 @@ class DashboardFragment : Fragment() {
         allNotesButton.isActivated = state.filter == DashboardFilter.All
         unfiledNotesButton.isActivated = state.filter == DashboardFilter.Unfiled
         trashButton.isActivated = state.filter == DashboardFilter.Trash
+        setFilterAccessibilityState(allNotesButton, state.filter == DashboardFilter.All)
+        setFilterAccessibilityState(unfiledNotesButton, state.filter == DashboardFilter.Unfiled)
+        setFilterAccessibilityState(trashButton, state.filter == DashboardFilter.Trash)
         newNoteButton.isVisible = state.filter != DashboardFilter.Trash
         contentTitle.text = when (val filter = state.filter) {
             DashboardFilter.All -> getString(R.string.all_notes)
@@ -196,6 +200,16 @@ class DashboardFragment : Fragment() {
         )
         emptyState.isVisible = state.notes.isEmpty()
         noteGrid.isVisible = state.notes.isNotEmpty()
+    }
+
+    private fun setFilterAccessibilityState(view: View, selected: Boolean) {
+        ViewCompat.setStateDescription(
+            view,
+            getString(
+                if (selected) R.string.accessibility_selected
+                else R.string.accessibility_not_selected,
+            ),
+        )
     }
 
     private fun showNotebookMenu(anchor: View, notebook: Notebook) {

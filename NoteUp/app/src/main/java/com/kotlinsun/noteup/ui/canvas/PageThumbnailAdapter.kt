@@ -2,6 +2,7 @@ package com.kotlinsun.noteup.ui.canvas
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
@@ -55,19 +56,56 @@ class PageThumbnailAdapter(
 
         fun bind(item: PageListItem, position: Int) = with(binding) {
             pageId = item.page.id
-            pageNumber.text = root.context.getString(R.string.page_number, position + 1)
-            pageTemplate.text = root.context.getString(
+            val pagePosition = position + 1
+            pageNumber.text = root.context.getString(R.string.page_number, pagePosition)
+            val templateLabel = root.context.getString(
                 when (item.page.templateType) {
                     com.kotlinsun.noteup.domain.model.PageTemplate.BLANK -> R.string.template_blank
                     com.kotlinsun.noteup.domain.model.PageTemplate.LINED -> R.string.template_lined
                     com.kotlinsun.noteup.domain.model.PageTemplate.GRID -> R.string.template_grid
                 },
             )
+            pageTemplate.text = templateLabel
             root.isActivated = item.selected
             pageNumber.isActivated = item.selected
             pageTemplate.isActivated = item.selected
             deletePageButton.isActivated = item.selected
             deletePageButton.isEnabled = items.size > 1
+            root.contentDescription = root.context.getString(
+                R.string.accessibility_page_item,
+                pagePosition,
+                templateLabel,
+            )
+            deletePageButton.contentDescription = root.context.getString(
+                R.string.accessibility_delete_page,
+                pagePosition,
+            )
+            ViewCompat.setStateDescription(
+                root,
+                root.context.getString(
+                    if (item.selected) R.string.accessibility_selected
+                    else R.string.accessibility_not_selected,
+                ),
+            )
+            ViewCompat.setStateDescription(
+                deletePageButton,
+                root.context.getString(
+                    if (deletePageButton.isEnabled) R.string.accessibility_available
+                    else R.string.accessibility_unavailable,
+                ),
+            )
+            ViewCompat.setImportantForAccessibility(
+                pageNumber,
+                ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO,
+            )
+            ViewCompat.setImportantForAccessibility(
+                pageTemplate,
+                ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO,
+            )
+            ViewCompat.setImportantForAccessibility(
+                pagePreview,
+                ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO,
+            )
             root.setOnClickListener { onClick(item.page) }
             deletePageButton.setOnClickListener { onDelete(item.page) }
             pagePreview.setImageDrawable(null)

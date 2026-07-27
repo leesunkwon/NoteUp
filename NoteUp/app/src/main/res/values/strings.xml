@@ -171,4 +171,17 @@
     <string name="reset">초기화</string>
     <string name="settings_reset_complete">사용자 설정을 초기화했습니다.</string>
     <string name="app_version">버전 %1$s</string>
+    <string name="accessibility_selected">선택됨</string>
+    <string name="accessibility_not_selected">선택 안 됨</string>
+    <string name="accessibility_available">사용 가능</string>
+    <string name="accessibility_unavailable">사용 불가</string>
+    <string name="accessibility_note_item">%1$s, %2$s</string>
+    <string name="accessibility_notebook_item">노트북 %1$s</string>
+    <string name="accessibility_page_item">%1$d페이지, %2$s</string>
+    <string name="accessibility_delete_page">%1$d페이지 삭제</string>
+    <string name="accessibility_more_options_for">%1$s 더보기</string>
+    <string name="accessibility_canvas">필기 캔버스, %1$d / %2$d페이지, 확대 %3$d%%</string>
+    <string name="accessibility_setting_value">%1$s, %2$s</string>
+    <string name="keyboard_shortcuts">키보드 단축키</string>
+    <string name="keyboard_shortcuts_description">Ctrl 또는 Command + Z: 실행 취소\nCtrl 또는 Command + Shift + Z, Ctrl 또는 Command + Y: 다시 실행\n1~5: 펜, 형광펜, 지우개, 올가미, 텍스트\n[ / ]: 이전·다음 페이지\n- / 0 / +: 축소·초기화·확대\nDelete 또는 Backspace: 선택 요소 삭제\nEsc: 진행 중인 작업과 선택 취소</string>
 </resources>
