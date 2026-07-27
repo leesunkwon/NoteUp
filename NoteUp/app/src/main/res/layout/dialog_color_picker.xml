@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/spacing_large">
+
+    <com.kotlinsun.noteup.ui.canvas.HsvColorPickerView
+        android:id="@+id/color_picker"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/color_picker_height"
+        android:paddingTop="@dimen/spacing_small" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_medium"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/current_color"
+                android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+
+            <View
+                android:id="@+id/current_color_preview"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/color_preview_height"
+                android:layout_marginTop="@dimen/spacing_extra_small"
+                android:background="@drawable/bg_color_preview" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_small"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/selected_color"
+                android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+
+            <View
+                android:id="@+id/selected_color_preview"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/color_preview_height"
+                android:layout_marginTop="@dimen/spacing_extra_small"
+                android:background="@drawable/bg_color_preview" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/hex_input_layout"
+        style="@style/Widget.NoteUp.TextInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_medium"
+        android:hint="@string/color_hex_hint"
+        app:prefixText="#">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/hex_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:digits="0123456789ABCDEFabcdef"
+            android:imeOptions="actionDone"
+            android:inputType="textCapCharacters"
+            android:maxLength="6"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+</LinearLayout>

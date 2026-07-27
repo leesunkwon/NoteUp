@@ -19,6 +19,7 @@ import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.data.preferences.TrashRetention
 import com.kotlinsun.noteup.databinding.FragmentSettingsBinding
 import com.kotlinsun.noteup.domain.model.CanvasAppearance
+import com.kotlinsun.noteup.domain.model.CanvasInputMode
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.ThemeMode
 import com.kotlinsun.noteup.nightMode
@@ -33,6 +34,7 @@ class SettingsFragment : Fragment() {
         val container = (requireActivity().application as NoteUpApplication).container
         SettingsViewModel.Factory(
             container.appSettingsStore,
+            container.customColorPaletteStore,
             container.trashRetentionStore,
             container.trashCleanupService,
         )
@@ -64,6 +66,7 @@ class SettingsFragment : Fragment() {
         themeModeRow.setOnClickListener { showThemeModeDialog() }
         canvasAppearanceRow.setOnClickListener { showCanvasAppearanceDialog() }
         defaultTemplateRow.setOnClickListener { showDefaultTemplateDialog() }
+        canvasInputModeRow.setOnClickListener { showCanvasInputModeDialog() }
         trashRetentionCard.setOnClickListener { showRetentionDialog() }
         resetSettingsRow.setOnClickListener { confirmReset() }
 
@@ -98,6 +101,7 @@ class SettingsFragment : Fragment() {
         themeModeSummary.setText(state.settings.themeMode.labelRes())
         canvasAppearanceSummary.setText(state.settings.canvasAppearance.labelRes())
         defaultTemplateSummary.setText(state.settings.defaultPageTemplate.labelRes())
+        canvasInputModeSummary.setText(state.settings.canvasInputMode.labelRes())
         trashRetentionSummary.setText(state.trashRetention.labelRes())
         behaviorSection.pageSwipeSwitch.isChecked = state.settings.pageSwipeEnabled
         behaviorSection.keepScreenOnSwitch.isChecked = state.settings.keepScreenOn
@@ -117,6 +121,11 @@ class SettingsFragment : Fragment() {
             getString(R.string.default_template_title),
             defaultTemplateSummary.text,
         )
+        canvasInputModeRow.contentDescription = getString(
+            R.string.accessibility_setting_value,
+            getString(R.string.canvas_input_mode_title),
+            canvasInputModeSummary.text,
+        )
         trashRetentionCard.contentDescription = getString(
             R.string.accessibility_setting_value,
             getString(R.string.trash_retention_title),
@@ -126,6 +135,7 @@ class SettingsFragment : Fragment() {
             themeModeSummary,
             canvasAppearanceSummary,
             defaultTemplateSummary,
+            canvasInputModeSummary,
             trashRetentionSummary,
         ).forEach {
             ViewCompat.setImportantForAccessibility(it, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO)
@@ -161,6 +171,15 @@ class SettingsFragment : Fragment() {
             values.map { getString(it.labelRes()) },
             values.indexOf(currentState.settings.defaultPageTemplate),
         ) { viewModel.setDefaultPageTemplate(values[it]) }
+    }
+
+    private fun showCanvasInputModeDialog() {
+        val values = CanvasInputMode.entries
+        showSingleChoiceDialog(
+            R.string.canvas_input_mode_title,
+            values.map { getString(it.labelRes()) },
+            values.indexOf(currentState.settings.canvasInputMode),
+        ) { viewModel.setCanvasInputMode(values[it]) }
     }
 
     private fun showRetentionDialog() {
@@ -221,6 +240,11 @@ class SettingsFragment : Fragment() {
     private fun CanvasAppearance.labelRes() = when (this) {
         CanvasAppearance.WHITE_PAPER -> R.string.canvas_appearance_white
         CanvasAppearance.DARK_PAPER -> R.string.canvas_appearance_dark
+    }
+
+    private fun CanvasInputMode.labelRes() = when (this) {
+        CanvasInputMode.STYLUS_ONLY -> R.string.canvas_input_mode_stylus_only
+        CanvasInputMode.STYLUS_AND_TOUCH -> R.string.canvas_input_mode_stylus_touch
     }
 
     private fun PageTemplate.labelRes() = when (this) {

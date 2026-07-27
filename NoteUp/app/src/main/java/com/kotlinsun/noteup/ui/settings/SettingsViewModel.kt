@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.kotlinsun.noteup.data.preferences.AppSettingsStore
+import com.kotlinsun.noteup.data.preferences.CustomColorPaletteStore
 import com.kotlinsun.noteup.data.preferences.TrashRetention
 import com.kotlinsun.noteup.data.preferences.TrashRetentionStore
 import com.kotlinsun.noteup.data.trash.TrashCleanupService
 import com.kotlinsun.noteup.domain.model.AppSettings
 import com.kotlinsun.noteup.domain.model.CanvasAppearance
+import com.kotlinsun.noteup.domain.model.CanvasInputMode
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.ThemeMode
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +25,7 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val appSettingsStore: AppSettingsStore,
+    private val customColorPaletteStore: CustomColorPaletteStore,
     private val trashRetentionStore: TrashRetentionStore,
     private val trashCleanupService: TrashCleanupService,
 ) : ViewModel() {
@@ -38,6 +41,7 @@ class SettingsViewModel(
 
     fun setThemeMode(value: ThemeMode) = appSettingsStore.setThemeMode(value)
     fun setCanvasAppearance(value: CanvasAppearance) = appSettingsStore.setCanvasAppearance(value)
+    fun setCanvasInputMode(value: CanvasInputMode) = appSettingsStore.setCanvasInputMode(value)
     fun setDefaultPageTemplate(value: PageTemplate) = appSettingsStore.setDefaultPageTemplate(value)
     fun setPageSwipeEnabled(value: Boolean) = appSettingsStore.setPageSwipeEnabled(value)
     fun setKeepScreenOn(value: Boolean) = appSettingsStore.setKeepScreenOn(value)
@@ -50,18 +54,21 @@ class SettingsViewModel(
 
     fun reset() {
         appSettingsStore.reset()
+        customColorPaletteStore.reset()
         trashRetentionStore.set(TrashRetention.DAYS_30)
         trashCleanupService.request()
     }
 
     class Factory(
         private val appSettingsStore: AppSettingsStore,
+        private val customColorPaletteStore: CustomColorPaletteStore,
         private val trashRetentionStore: TrashRetentionStore,
         private val trashCleanupService: TrashCleanupService,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = SettingsViewModel(
             appSettingsStore,
+            customColorPaletteStore,
             trashRetentionStore,
             trashCleanupService,
         ) as T

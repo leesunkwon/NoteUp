@@ -3,6 +3,7 @@ package com.kotlinsun.noteup.domain.model
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val canvasAppearance: CanvasAppearance = CanvasAppearance.WHITE_PAPER,
+    val canvasInputMode: CanvasInputMode = CanvasInputMode.STYLUS_ONLY,
     val defaultPageTemplate: PageTemplate = PageTemplate.BLANK,
     val pageSwipeEnabled: Boolean = true,
     val keepScreenOn: Boolean = false,
@@ -18,4 +19,9 @@ enum class ThemeMode {
 enum class CanvasAppearance {
     WHITE_PAPER,
     DARK_PAPER,
+}
+
+enum class CanvasInputMode {
+    STYLUS_ONLY,
+    STYLUS_AND_TOUCH,
 }

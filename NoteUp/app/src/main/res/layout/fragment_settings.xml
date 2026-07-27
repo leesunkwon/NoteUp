@@ -159,6 +159,40 @@
                     tools:text="@string/template_blank" />
             </LinearLayout>
 
+            <LinearLayout
+                android:id="@+id/canvas_input_mode_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_medium">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/canvas_input_mode_title"
+                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                <TextView
+                    android:id="@+id/canvas_input_mode_summary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+                    tools:text="@string/canvas_input_mode_stylus_only" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:text="@string/canvas_input_mode_description"
+                    android:textAppearance="@style/TextAppearance.NoteUp.CaptionSmall" />
+            </LinearLayout>
+
             <include
                 android:id="@+id/behavior_section"
                 layout="@layout/view_settings_behavior_section" />
