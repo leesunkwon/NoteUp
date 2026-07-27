@@ -46,6 +46,7 @@ import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.domain.model.ExportArtifact
 import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
+import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -618,6 +619,7 @@ class CanvasFragment : Fragment() {
                     .setNegativeButton(R.string.cancel, null)
                     .setPositiveButton(R.string.delete) { _, _ -> viewModel.editText(text, content) }
                     .show()
+                    .applyCriticalPositiveAction()
             } else viewModel.editText(text, content)
         }
     }
@@ -629,7 +631,11 @@ class CanvasFragment : Fragment() {
             setText(initialValue.orEmpty())
             setSelection(text?.length ?: 0)
         }
-        val inputLayout = TextInputLayout(requireContext()).apply {
+        val inputLayout = TextInputLayout(
+            requireContext(),
+            null,
+            com.google.android.material.R.attr.textInputStyle,
+        ).apply {
             hint = getString(R.string.text_hint)
             addView(input)
             val padding = resources.getDimensionPixelSize(R.dimen.spacing_large)
@@ -684,6 +690,7 @@ class CanvasFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ -> viewModel.deletePage(page) }
             .show()
+            .applyCriticalPositiveAction()
     }
 
     private fun handleEvent(event: CanvasEvent) = when (event) {

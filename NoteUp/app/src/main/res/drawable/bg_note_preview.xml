@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape>
-            <solid android:color="@color/noteup_soft_cloud" />
-            <stroke
-                android:width="@dimen/hairline_width"
-                android:color="@color/noteup_preview_line" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="@dimen/seed_radius_r2" />
+    <solid android:color="@color/noteup_bg_layer_basement" />
+    <stroke
+        android:width="@dimen/hairline_width"
+        android:color="@color/noteup_stroke_neutral_muted" />
+</shape>

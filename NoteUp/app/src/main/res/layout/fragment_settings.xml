@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/noteup_background"
+    android:background="@color/noteup_bg_layer_default"
     android:padding="@dimen/screen_content_padding"
     tools:context=".ui.settings.SettingsFragment">
 
@@ -13,7 +13,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/settings_title"
-        android:textAppearance="@style/TextAppearance.NoteUp.Title"
+        android:textAppearance="@style/TextAppearance.NoteUp.ScreenTitle"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
@@ -27,6 +27,7 @@
         android:focusable="true"
         android:minHeight="@dimen/settings_row_min_height"
         android:orientation="vertical"
+        android:paddingHorizontal="@dimen/spacing_medium"
         android:paddingVertical="@dimen/spacing_medium"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

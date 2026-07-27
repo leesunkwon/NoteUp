@@ -5,7 +5,7 @@
     android:id="@+id/dashboard_drawer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/noteup_background"
+    android:background="@color/noteup_bg_layer_default"
     tools:context=".ui.dashboard.DashboardFragment">
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -19,7 +19,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:contentDescription="@string/open_navigation"
-            android:text="@string/open_navigation"
+            app:icon="@drawable/ic_menu"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
@@ -43,6 +43,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/new_note"
+            app:icon="@drawable/ic_add"
+            app:iconGravity="textStart"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
@@ -55,20 +57,13 @@
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/search_input_layout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.NoteUp.TextInputLayout"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/spacing_medium"
             android:hint="@string/search_notes_hint"
-            app:boxBackgroundColor="@color/noteup_soft_cloud"
-            app:boxCornerRadiusBottomEnd="@dimen/control_corner_radius"
-            app:boxCornerRadiusBottomStart="@dimen/control_corner_radius"
-            app:boxCornerRadiusTopEnd="@dimen/control_corner_radius"
-            app:boxCornerRadiusTopStart="@dimen/control_corner_radius"
-            app:boxStrokeColor="@color/noteup_ink"
-            app:boxStrokeWidth="0dp"
-            app:boxStrokeWidthFocused="2dp"
             app:endIconMode="clear_text"
+            app:startIconDrawable="@drawable/ic_search"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/dashboard_header_bottom">
@@ -114,7 +109,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/empty_notes_title"
-                android:textAppearance="@style/TextAppearance.NoteUp.Title" />
+                android:textAppearance="@style/TextAppearance.NoteUp.SectionTitle" />
 
             <TextView
                 android:id="@+id/empty_state_description"
@@ -131,7 +126,7 @@
         android:layout_width="@dimen/sidebar_width"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="@color/noteup_sidebar"
+        android:background="@color/noteup_bg_layer_basement"
         android:elevation="0dp"
         android:orientation="vertical"
         android:padding="@dimen/spacing_large">
@@ -139,9 +134,9 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:letterSpacing="0.04"
             android:text="@string/dashboard_title"
-            android:textAppearance="@style/TextAppearance.NoteUp.Title" />
+            android:textAppearance="@style/TextAppearance.NoteUp.ScreenTitle"
+            android:textColor="@color/noteup_fg_brand" />
 
         <TextView
             android:id="@+id/all_notes_button"
@@ -199,13 +194,17 @@
             style="@style/Widget.NoteUp.Button.Secondary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/add_notebook" />
+            android:text="@string/add_notebook"
+            app:icon="@drawable/ic_folder_add"
+            app:iconGravity="textStart" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/open_settings_button"
             style="@style/Widget.NoteUp.Button.Secondary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/open_settings" />
+            android:text="@string/open_settings"
+            app:icon="@drawable/ic_settings"
+            app:iconGravity="textStart" />
     </LinearLayout>
 </androidx.drawerlayout.widget.DrawerLayout>

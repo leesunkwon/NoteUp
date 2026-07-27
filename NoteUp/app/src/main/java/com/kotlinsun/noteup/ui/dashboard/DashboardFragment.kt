@@ -28,6 +28,7 @@ import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentDashboardBinding
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
+import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
 import kotlinx.coroutines.launch
 
 class DashboardFragment : Fragment() {
@@ -287,6 +288,7 @@ class DashboardFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteNotebook(notebook) }
             .show()
+            .applyCriticalPositiveAction()
     }
 
     private fun confirmNoteDeletion(note: Note) {
@@ -296,6 +298,7 @@ class DashboardFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteNote(note) }
             .show()
+            .applyCriticalPositiveAction()
     }
 
     private fun confirmPermanentDeletion(note: Note) {
@@ -307,6 +310,7 @@ class DashboardFragment : Fragment() {
                 viewModel.permanentlyDeleteNote(note.id)
             }
             .show()
+            .applyCriticalPositiveAction()
     }
 
     private fun handleEvent(event: DashboardEvent) = when (event) {
@@ -327,7 +331,11 @@ class DashboardFragment : Fragment() {
             setText(initialValue)
             setSelection(text?.length ?: 0)
         }
-        val inputLayout = TextInputLayout(requireContext()).apply {
+        val inputLayout = TextInputLayout(
+            requireContext(),
+            null,
+            com.google.android.material.R.attr.textInputStyle,
+        ).apply {
             hint = getString(R.string.name_hint)
             addView(input)
             val horizontalPadding = resources.getDimensionPixelSize(R.dimen.spacing_large)

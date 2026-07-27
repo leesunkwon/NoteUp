@@ -1,27 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
-    <color name="noteup_ink">#111111</color>
-    <color name="noteup_canvas">#FFFFFF</color>
-    <color name="noteup_soft_cloud">#F5F5F5</color>
-    <color name="noteup_hairline">#CACACB</color>
-    <color name="noteup_hairline_soft">#E5E5E5</color>
-    <color name="noteup_charcoal">#39393B</color>
-    <color name="noteup_mute">#707072</color>
-    <color name="noteup_stone">#9E9EA0</color>
-    <color name="noteup_primary">#111111</color>
-    <color name="noteup_on_primary">#FFFFFFFF</color>
-    <color name="noteup_background">#FFFFFFFF</color>
-    <color name="noteup_surface">#FFFFFFFF</color>
-    <color name="noteup_on_surface">#111111</color>
-    <color name="noteup_outline">#CACACB</color>
-    <color name="noteup_sidebar">#F5F5F5</color>
-    <color name="noteup_sidebar_selected">#111111</color>
-    <color name="noteup_preview_line">#E5E5E5</color>
-    <color name="noteup_page">#FFFFFFFF</color>
-    <color name="noteup_template_line">#E5E5E5</color>
-    <color name="noteup_secondary_text">#707072</color>
+    <!-- SEED palette: raw values are kept separate from semantic UI roles. -->
+    <color name="seed_gray_00">#FFFFFFFF</color>
+    <color name="seed_gray_100">#FFF7F8F9</color>
+    <color name="seed_gray_200">#FFF3F4F5</color>
+    <color name="seed_gray_300">#FFEEEFF1</color>
+    <color name="seed_gray_400">#FFDCDEE3</color>
+    <color name="seed_gray_500">#FFD1D3D8</color>
+    <color name="seed_gray_600">#FFB0B3BA</color>
+    <color name="seed_gray_700">#FF868B94</color>
+    <color name="seed_gray_800">#FF555D6D</color>
+    <color name="seed_gray_900">#FF2A3038</color>
+    <color name="seed_gray_1000">#FF1A1C20</color>
+
+    <color name="seed_carrot_100">#FFFFF2EC</color>
+    <color name="seed_carrot_300">#FFFFD5C0</color>
+    <color name="seed_carrot_500">#FFFF9364</color>
+    <color name="seed_carrot_600">#FFFF6F0F</color>
+    <color name="seed_carrot_700">#FFE85D00</color>
+    <color name="seed_red_100">#FFFFECEE</color>
+    <color name="seed_red_700">#FFD92727</color>
+    <color name="seed_green_100">#FFF0FBE5</color>
+    <color name="seed_green_700">#FF1D7A40</color>
+
+    <!-- NoteUp semantic roles, mapped from the SEED palette. -->
+    <color name="noteup_bg_layer_default">@color/seed_gray_00</color>
+    <color name="noteup_bg_layer_basement">@color/seed_gray_100</color>
+    <color name="noteup_bg_neutral_weak">@color/seed_gray_200</color>
+    <color name="noteup_bg_neutral_pressed">@color/seed_gray_300</color>
+    <color name="noteup_bg_neutral_inverted">@color/seed_gray_1000</color>
+    <color name="noteup_bg_disabled">@color/seed_gray_300</color>
+    <color name="noteup_bg_brand">@color/seed_carrot_600</color>
+    <color name="noteup_bg_brand_pressed">@color/seed_carrot_700</color>
+    <color name="noteup_bg_brand_weak">@color/seed_carrot_100</color>
+    <color name="noteup_bg_critical_weak">@color/seed_red_100</color>
+    <color name="noteup_bg_positive_weak">@color/seed_green_100</color>
+
+    <color name="noteup_fg_neutral">@color/seed_gray_1000</color>
+    <color name="noteup_fg_neutral_subtle">@color/seed_gray_800</color>
+    <color name="noteup_fg_neutral_muted">@color/seed_gray_700</color>
+    <color name="noteup_fg_neutral_inverted">@color/seed_gray_00</color>
+    <color name="noteup_fg_disabled">@color/seed_gray_600</color>
+    <color name="noteup_fg_brand">@color/seed_carrot_700</color>
+    <color name="noteup_fg_critical">@color/seed_red_700</color>
+    <color name="noteup_fg_positive">@color/seed_green_700</color>
+
+    <color name="noteup_stroke_neutral_weak">@color/seed_gray_400</color>
+    <color name="noteup_stroke_neutral_muted">@color/seed_gray_300</color>
+    <color name="noteup_stroke_brand">@color/seed_carrot_600</color>
+    <color name="noteup_stroke_critical">@color/seed_red_700</color>
+
+    <color name="noteup_page">@color/seed_gray_00</color>
+    <color name="noteup_template_line">@color/seed_gray_300</color>
+
+    <!-- Drawing colors are content data and intentionally independent of app chrome. -->
     <color name="pen_black">#202124</color>
     <color name="pen_blue">#2563EB</color>
     <color name="pen_red">#DC2626</color>

@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/noteup_surface"
+    android:background="@color/noteup_bg_layer_basement"
     tools:context=".ui.canvas.CanvasFragment">
 
     <LinearLayout
@@ -38,9 +38,8 @@
                 android:layout_marginHorizontal="@dimen/spacing_small"
                 android:layout_weight="1"
                 android:ellipsize="end"
-                android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
-                android:textAppearance="@style/TextAppearance.NoteUp.Body"
+                android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
                 tools:text="새 노트" />
 
             <TextView
@@ -49,7 +48,7 @@
                 android:layout_height="wrap_content"
                 android:gravity="end|center_vertical"
                 android:text="@string/saved"
-                android:textColor="@color/noteup_secondary_text" />
+                android:textColor="@color/noteup_fg_neutral_muted" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/more_button"
@@ -165,7 +164,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/lasso_select_hint"
-                android:textColor="@color/noteup_secondary_text"
+                android:textColor="@color/noteup_fg_neutral_subtle"
                 android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
@@ -214,7 +213,7 @@
                 android:minHeight="0dp"
                 app:backgroundTint="@color/pen_black"
                 app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_on_surface" />
+                app:strokeColor="@color/noteup_stroke_brand" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/blue_color_button"
@@ -230,7 +229,7 @@
                 android:minHeight="0dp"
                 app:backgroundTint="@color/pen_blue"
                 app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_on_surface" />
+                app:strokeColor="@color/noteup_stroke_brand" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/red_color_button"
@@ -246,7 +245,7 @@
                 android:minHeight="0dp"
                 app:backgroundTint="@color/pen_red"
                 app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_on_surface" />
+                app:strokeColor="@color/noteup_stroke_brand" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/green_color_button"
@@ -262,7 +261,7 @@
                 android:minHeight="0dp"
                 app:backgroundTint="@color/pen_green"
                 app:cornerRadius="@dimen/pen_color_corner_radius"
-                app:strokeColor="@color/noteup_on_surface" />
+                app:strokeColor="@color/noteup_stroke_brand" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/stroke_eraser_mode_button"
@@ -309,7 +308,7 @@
         android:id="@+id/drawing_canvas"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="@color/noteup_surface"
+        android:background="@color/noteup_bg_layer_basement"
         android:contentDescription="@string/canvas_title"
         app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
         app:layout_constraintEnd_toEndOf="parent"
@@ -332,6 +331,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/page_list"
+            app:icon="@drawable/ic_pages"
+            app:iconGravity="textStart"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -365,14 +366,14 @@
             android:id="@+id/zoom_controls"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="@color/noteup_soft_cloud"
+            app:cardBackgroundColor="@color/noteup_bg_neutral_weak"
             app:cardCornerRadius="@dimen/zoom_floating_corner_radius"
             app:cardElevation="0dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-            app:strokeColor="@color/noteup_hairline_soft"
+            app:strokeColor="@color/noteup_stroke_neutral_muted"
             app:strokeWidth="@dimen/hairline_width">
 
             <LinearLayout
@@ -424,6 +425,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/add_page"
+            app:icon="@drawable/ic_add"
+            app:iconGravity="textStart"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -434,13 +437,13 @@
         android:layout_width="0dp"
         android:layout_height="@dimen/page_panel_portrait_height"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/noteup_canvas"
-        app:cardCornerRadius="0dp"
+        app:cardBackgroundColor="@color/noteup_bg_layer_default"
+        app:cardCornerRadius="@dimen/seed_radius_r4"
         app:cardElevation="0dp"
         app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:strokeColor="@color/noteup_hairline"
+        app:strokeColor="@color/noteup_stroke_neutral_weak"
         app:strokeWidth="@dimen/hairline_width"
         tools:visibility="visible">
 
@@ -509,7 +512,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/canvas_not_found_title"
-            android:textAppearance="@style/TextAppearance.NoteUp.Title" />
+            android:textAppearance="@style/TextAppearance.NoteUp.SectionTitle" />
 
         <TextView
             android:layout_width="wrap_content"
