@@ -7,6 +7,7 @@ import com.kotlinsun.noteup.data.local.NoteUpDatabase
 import com.kotlinsun.noteup.data.preferences.AppSettingsStore
 import com.kotlinsun.noteup.data.preferences.CustomColorPaletteStore
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
+import com.kotlinsun.noteup.data.preferences.OnboardingPreferencesStore
 import com.kotlinsun.noteup.data.repository.LocalNoteRepository
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
@@ -17,6 +18,7 @@ import com.kotlinsun.noteup.data.export.NoteExportService
 import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfImportService
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import com.kotlinsun.noteup.data.image.CanvasImageStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,27 +37,34 @@ class AppContainer(
         DatabaseMigrations.MIGRATION_2_3,
         DatabaseMigrations.MIGRATION_3_4,
         DatabaseMigrations.MIGRATION_4_5,
+        DatabaseMigrations.MIGRATION_5_6,
     ).build()
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
     val pdfDocumentStore = PdfDocumentStore(context)
     val pdfPageRenderStore = PdfPageRenderStore(context, pdfDocumentStore)
     val pdfImportService = PdfImportService(context, noteRepository, pdfDocumentStore)
+    val canvasImageStore = CanvasImageStore(context)
     val pageThumbnailStore = PageThumbnailStore(context)
     val pageThumbnailService = PageThumbnailService(
-        noteRepository, pageThumbnailStore, pdfPageRenderStore,
+        noteRepository, pageThumbnailStore, pdfPageRenderStore, canvasImageStore,
     )
-    val noteExportService = NoteExportService(context, noteRepository, pdfPageRenderStore)
+    val noteExportService = NoteExportService(
+        context, noteRepository, pdfPageRenderStore, canvasImageStore,
+    )
     val trashRetentionStore = TrashRetentionStore(context)
     val trashCleanupService = TrashCleanupService(
-        noteRepository, trashRetentionStore, pageThumbnailService, pdfDocumentStore, pdfPageRenderStore,
+        noteRepository, trashRetentionStore, pageThumbnailService, pdfDocumentStore,
+        pdfPageRenderStore, canvasImageStore,
     ).also { it.request() }
     val drawingToolSettingsStore = DrawingToolSettingsStore(context)
     val customColorPaletteStore = CustomColorPaletteStore(context)
+    val onboardingPreferencesStore = OnboardingPreferencesStore(context)
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             pdfDocumentStore.cleanupOrphans(noteRepository.getReferencedPdfStorageNames())
+            canvasImageStore.cleanupOrphans(noteRepository.getReferencedImageStorageNames())
         }
     }
 }

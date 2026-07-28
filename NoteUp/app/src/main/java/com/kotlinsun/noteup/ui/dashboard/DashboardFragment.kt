@@ -30,6 +30,7 @@ import com.kotlinsun.noteup.databinding.FragmentDashboardBinding
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
+import com.kotlinsun.noteup.ui.onboarding.GettingStartedDialogFragment
 import kotlinx.coroutines.launch
 
 class DashboardFragment : Fragment() {
@@ -47,6 +48,7 @@ class DashboardFragment : Fragment() {
             application.container.trashCleanupService,
             application.container.pdfDocumentStore,
             application.container.pdfPageRenderStore,
+            application.container.canvasImageStore,
         )
     }
 
@@ -81,6 +83,14 @@ class DashboardFragment : Fragment() {
         setupActions()
         binding.searchInput.doAfterTextChanged { viewModel.setSearchQuery(it?.toString().orEmpty()) }
         observeState()
+        val onboardingStore = (requireActivity().application as NoteUpApplication)
+            .container.onboardingPreferencesStore
+        val handlingExternalPdf = requireActivity().intent?.type == "application/pdf"
+        if (savedInstanceState == null && onboardingStore.shouldShow() && !handlingExternalPdf) {
+            binding.root.post {
+                if (isAdded) GettingStartedDialogFragment.show(childFragmentManager)
+            }
+        }
     }
 
     private fun setupLists() = with(binding) {

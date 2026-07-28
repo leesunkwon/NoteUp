@@ -56,4 +56,42 @@ object DatabaseMigrations {
             database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_pdf_page_backgrounds_pdfId_sourcePageIndex` ON `pdf_page_backgrounds` (`pdfId`, `sourcePageIndex`)")
         }
     }
+
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `canvas_images` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `pageId` INTEGER NOT NULL,
+                    `elementIndex` INTEGER NOT NULL,
+                    `storageName` TEXT NOT NULL,
+                    `originalWidth` INTEGER NOT NULL,
+                    `originalHeight` INTEGER NOT NULL,
+                    `orientationDegrees` INTEGER NOT NULL,
+                    `x` REAL NOT NULL,
+                    `y` REAL NOT NULL,
+                    `boxWidth` REAL NOT NULL,
+                    `boxHeight` REAL NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    FOREIGN KEY(`pageId`) REFERENCES `pages`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS `index_canvas_images_pageId_elementIndex`
+                ON `canvas_images` (`pageId`, `elementIndex`)
+                """.trimIndent(),
+            )
+            database.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_canvas_images_storageName`
+                ON `canvas_images` (`storageName`)
+                """.trimIndent(),
+            )
+        }
+    }
 }

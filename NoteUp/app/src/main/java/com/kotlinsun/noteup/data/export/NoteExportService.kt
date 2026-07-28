@@ -12,6 +12,7 @@ import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import com.kotlinsun.noteup.rendering.PageRenderer
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import com.kotlinsun.noteup.data.image.CanvasImageStore
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -24,6 +25,7 @@ class NoteExportService(
     context: Context,
     private val repository: NoteRepository,
     private val pdfRenderStore: PdfPageRenderStore,
+    private val imageStore: CanvasImageStore,
     private val renderer: PageRenderer = PageRenderer(),
 ) {
     private val applicationContext = context.applicationContext
@@ -41,6 +43,8 @@ class NoteExportService(
         val page = requireNotNull(repository.getPage(pageId))
         val strokes = repository.getStrokes(pageId)
         val texts = repository.getTexts(pageId)
+        val images = repository.getImages(pageId)
+        val imageBitmaps = loadImageBitmaps(images, IMAGE_WIDTH)
         val displayName = "${safeTitle(note.title)}_페이지_${pageNumber}_${timestamp()}.${format.extension}"
         val destination = File(directory, displayName)
         val temporary = File(directory, "$displayName.tmp")
@@ -52,7 +56,7 @@ class NoteExportService(
             try {
                 renderer.draw(
                     Canvas(bitmap), IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_DENSITY,
-                    page.templateType, strokes, texts, pdfBitmap,
+                    page.templateType, strokes, texts, pdfBitmap, images, imageBitmaps,
                 )
                 FileOutputStream(temporary).use { output ->
                     val compressFormat = if (format == ExportFormat.PNG) {
@@ -94,6 +98,8 @@ class NoteExportService(
             pages.forEachIndexed { index, page ->
                 val strokes = repository.getStrokes(page.id)
                 val texts = repository.getTexts(page.id)
+                val images = repository.getImages(page.id)
+                val imageBitmaps = loadImageBitmaps(images, PDF_WIDTH * 2)
                 val info = PdfDocument.PageInfo.Builder(PDF_WIDTH, PDF_HEIGHT, index + 1).create()
                 val backgroundBitmap = page.pdfBackground?.let {
                     pdfRenderStore.renderForExport(it, PDF_WIDTH * 2)
@@ -114,6 +120,8 @@ class NoteExportService(
                                 strokes,
                                 texts,
                                 backgroundBitmap,
+                                images,
+                                imageBitmaps,
                             )
                         } finally {
                             pdfPage.canvas.restore()
@@ -166,6 +174,13 @@ class NoteExportService(
             .drop(MAX_CACHE_FILES - 1)
             .forEach(File::delete)
     }
+
+    private suspend fun loadImageBitmaps(
+        images: List<com.kotlinsun.noteup.domain.model.CanvasImage>,
+        longEdge: Int,
+    ): Map<Long, Bitmap> = images.mapNotNull { image ->
+        imageStore.load(image.storageName, longEdge)?.let { image.id to it }
+    }.toMap()
 
     private fun replaceAtomically(temporary: File, destination: File) {
         if (destination.exists()) check(destination.delete())

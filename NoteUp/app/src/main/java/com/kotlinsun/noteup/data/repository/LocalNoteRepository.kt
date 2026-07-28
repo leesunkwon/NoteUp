@@ -8,11 +8,15 @@ import com.kotlinsun.noteup.data.local.entity.NotebookEntity
 import com.kotlinsun.noteup.data.local.entity.PageEntity
 import com.kotlinsun.noteup.data.local.entity.StrokeEntity
 import com.kotlinsun.noteup.data.local.entity.CanvasTextEntity
+import com.kotlinsun.noteup.data.local.entity.CanvasImageEntity
 import com.kotlinsun.noteup.data.local.entity.ImportedPdfEntity
 import com.kotlinsun.noteup.data.local.entity.PdfPageBackgroundEntity
 import com.kotlinsun.noteup.data.local.dao.PageWithBackgroundRow
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
+import com.kotlinsun.noteup.domain.model.CanvasImage
+import com.kotlinsun.noteup.domain.model.CanvasImageDraft
+import com.kotlinsun.noteup.domain.model.CopiedCanvasElements
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.model.Page
@@ -36,6 +40,7 @@ class LocalNoteRepository(
     private val pageDao = database.pageDao()
     private val strokeDao = database.strokeDao()
     private val canvasTextDao = database.canvasTextDao()
+    private val canvasImageDao = database.canvasImageDao()
     private val importedPdfDao = database.importedPdfDao()
     private val pdfPageBackgroundDao = database.pdfPageBackgroundDao()
 
@@ -73,6 +78,9 @@ class LocalNoteRepository(
 
     override fun observeTexts(pageId: Long): Flow<List<CanvasText>> =
         canvasTextDao.observeByPage(pageId).map { values -> values.map { it.toDomain() } }
+
+    override fun observeImages(pageId: Long): Flow<List<CanvasImage>> =
+        canvasImageDao.observeByPage(pageId).map { values -> values.map { it.toDomain() } }
 
     override suspend fun createNotebook(name: String): Long {
         val now = System.currentTimeMillis()
@@ -136,8 +144,10 @@ class LocalNoteRepository(
         database.withTransaction {
             val pageIds = pageDao.getIdsByNoteIds(listOf(noteId))
             val storageNames = importedPdfDao.getStorageNamesByNoteIds(listOf(noteId))
+            val imageStorageNames = canvasImageDao.getStorageNamesByPageIds(pageIds)
             check(noteDao.deleteTrashedByIds(listOf(noteId)) == 1)
-            DeletedAssets(pageIds, storageNames)
+            val removedImages = imageStorageNames.filter { canvasImageDao.referenceCount(it) == 0 }
+            DeletedAssets(pageIds, storageNames, removedImages)
         }
 
     override suspend fun purgeExpiredNotes(cutoff: Long): DeletedAssets =
@@ -146,8 +156,10 @@ class LocalNoteRepository(
             if (noteIds.isEmpty()) return@withTransaction DeletedAssets()
             val pageIds = pageDao.getIdsByNoteIds(noteIds)
             val storageNames = importedPdfDao.getStorageNamesByNoteIds(noteIds)
+            val imageStorageNames = canvasImageDao.getStorageNamesByPageIds(pageIds)
             noteDao.deleteTrashedByIds(noteIds)
-            DeletedAssets(pageIds, storageNames)
+            val removedImages = imageStorageNames.filter { canvasImageDao.referenceCount(it) == 0 }
+            DeletedAssets(pageIds, storageNames, removedImages)
         }
 
     override suspend fun createImportedPdfNote(
@@ -200,6 +212,9 @@ class LocalNoteRepository(
     override suspend fun getReferencedPdfStorageNames(): Set<String> =
         importedPdfDao.getAllStorageNames().toSet()
 
+    override suspend fun getReferencedImageStorageNames(): Set<String> =
+        canvasImageDao.getAllStorageNames().toSet()
+
     override suspend fun createPage(noteId: Long, template: PageTemplate): Long =
         database.withTransaction {
             val now = System.currentTimeMillis()
@@ -225,6 +240,7 @@ class LocalNoteRepository(
         require(pages.size > 1) { "The last page cannot be deleted" }
         require(pages.any { it.id == pageId }) { "Page does not belong to note" }
         val background = pdfPageBackgroundDao.getByPage(pageId)
+        val imageStorageNames = canvasImageDao.getStorageNamesByPageIds(listOf(pageId))
         val storageName = background?.let { importedPdfDao.getStorageNamesByNoteIds(listOf(noteId)).firstOrNull() }
         pageDao.delete(pageId)
         val now = System.currentTimeMillis()
@@ -237,7 +253,12 @@ class LocalNoteRepository(
             importedPdfDao.delete(background.pdfId)
             listOfNotNull(storageName)
         } else emptyList()
-        DeletedAssets(pageIds = listOf(pageId), pdfStorageNames = removedPdf)
+        val removedImages = imageStorageNames.filter { canvasImageDao.referenceCount(it) == 0 }
+        DeletedAssets(
+            pageIds = listOf(pageId),
+            pdfStorageNames = removedPdf,
+            imageStorageNames = removedImages,
+        )
     }
 
     override suspend fun reorderPages(noteId: Long, orderedPageIds: List<Long>) =
@@ -263,6 +284,9 @@ class LocalNoteRepository(
 
     override suspend fun getTexts(pageId: Long): List<CanvasText> =
         canvasTextDao.getByPage(pageId).map { it.toDomain() }
+
+    override suspend fun getImages(pageId: Long): List<CanvasImage> =
+        canvasImageDao.getByPage(pageId).map { it.toDomain() }
 
     override suspend fun saveStroke(
         noteId: Long,
@@ -393,6 +417,31 @@ class LocalNoteRepository(
         saved
     }
 
+    override suspend fun addImage(
+        noteId: Long,
+        pageId: Long,
+        draft: CanvasImageDraft,
+    ): CanvasImage = database.withTransaction {
+        val now = System.currentTimeMillis()
+        val entity = CanvasImageEntity(
+            pageId = pageId,
+            elementIndex = nextElementIndex(pageId),
+            storageName = draft.storageName,
+            originalWidth = draft.originalWidth,
+            originalHeight = draft.originalHeight,
+            orientationDegrees = draft.orientationDegrees,
+            x = draft.x,
+            y = draft.y,
+            boxWidth = draft.boxWidth,
+            boxHeight = draft.boxHeight,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val saved = entity.copy(id = canvasImageDao.insert(entity)).toDomain()
+        noteDao.touch(noteId, now)
+        saved
+    }
+
     override suspend fun updateStrokes(noteId: Long, strokes: List<Stroke>) {
         if (strokes.isEmpty()) return
         database.withTransaction {
@@ -506,8 +555,115 @@ class LocalNoteRepository(
         savedStrokes to savedTexts
     }
 
+    override suspend fun updateElements(
+        noteId: Long,
+        strokes: List<Stroke>,
+        texts: List<CanvasText>,
+        images: List<CanvasImage>,
+    ) {
+        if (strokes.isEmpty() && texts.isEmpty() && images.isEmpty()) return
+        database.withTransaction {
+            if (strokes.isNotEmpty()) strokeDao.updateAll(strokes.map { it.toEntity() })
+            if (texts.isNotEmpty()) canvasTextDao.updateAll(texts.map { it.toEntity() })
+            if (images.isNotEmpty()) canvasImageDao.updateAll(images.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun deleteElements(
+        noteId: Long,
+        strokes: List<Stroke>,
+        texts: List<CanvasText>,
+        images: List<CanvasImage>,
+    ) {
+        if (strokes.isEmpty() && texts.isEmpty() && images.isEmpty()) return
+        database.withTransaction {
+            if (strokes.isNotEmpty()) strokeDao.deleteByIds(strokes.map(Stroke::id))
+            if (texts.isNotEmpty()) canvasTextDao.deleteByIds(texts.map(CanvasText::id))
+            if (images.isNotEmpty()) canvasImageDao.deleteByIds(images.map(CanvasImage::id))
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun restoreElements(
+        noteId: Long,
+        strokes: List<Stroke>,
+        texts: List<CanvasText>,
+        images: List<CanvasImage>,
+    ) {
+        if (strokes.isEmpty() && texts.isEmpty() && images.isEmpty()) return
+        database.withTransaction {
+            if (strokes.isNotEmpty()) {
+                check(strokeDao.insertAll(strokes.map { it.toEntity() }).none { it == -1L })
+            }
+            if (texts.isNotEmpty()) canvasTextDao.insertAll(texts.map { it.toEntity() })
+            if (images.isNotEmpty()) canvasImageDao.insertAll(images.map { it.toEntity() })
+            noteDao.touch(noteId, System.currentTimeMillis())
+        }
+    }
+
+    override suspend fun copyElements(
+        noteId: Long,
+        pageId: Long,
+        strokes: List<StrokeDraft>,
+        texts: List<CanvasTextDraft>,
+        images: List<CanvasImageDraft>,
+    ): CopiedCanvasElements = database.withTransaction {
+        val now = System.currentTimeMillis()
+        var elementIndex = nextElementIndex(pageId)
+        val savedStrokes = strokes.map { draft ->
+            val entity = StrokeEntity(
+                pageId = pageId,
+                strokeIndex = elementIndex++,
+                toolType = draft.tool.name,
+                colorArgb = draft.colorArgb,
+                strokeWidth = draft.width,
+                points = StrokePointCodec.encode(draft.points),
+                createdAt = now,
+            )
+            entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
+                ?: error("Copied stroke could not be decoded")
+        }
+        val savedTexts = texts.map { draft ->
+            CanvasTextEntity(
+                pageId = pageId,
+                elementIndex = elementIndex++,
+                x = draft.x,
+                y = draft.y,
+                boxWidth = draft.boxWidth,
+                content = draft.content,
+                colorArgb = draft.colorArgb,
+                textSizeSp = draft.textSizeSp,
+                createdAt = now,
+                updatedAt = now,
+            ).let { it.copy(id = canvasTextDao.insert(it)).toDomain() }
+        }
+        val savedImages = images.map { draft ->
+            CanvasImageEntity(
+                pageId = pageId,
+                elementIndex = elementIndex++,
+                storageName = draft.storageName,
+                originalWidth = draft.originalWidth,
+                originalHeight = draft.originalHeight,
+                orientationDegrees = draft.orientationDegrees,
+                x = draft.x,
+                y = draft.y,
+                boxWidth = draft.boxWidth,
+                boxHeight = draft.boxHeight,
+                createdAt = now,
+                updatedAt = now,
+            ).let { it.copy(id = canvasImageDao.insert(it)).toDomain() }
+        }
+        noteDao.touch(noteId, now)
+        CopiedCanvasElements(savedStrokes, savedTexts, savedImages)
+    }
+
     private suspend fun nextElementIndex(pageId: Long): Int =
-        maxOf(strokeDao.maximumIndex(pageId), canvasTextDao.maximumIndex(pageId)) + 1
+        maxOf(
+            strokeDao.maximumIndex(pageId),
+            canvasTextDao.maximumIndex(pageId),
+            canvasImageDao.maximumIndex(pageId),
+        ) + 1
 
     private fun NotebookEntity.toDomain() = Notebook(
         id = id,
@@ -574,5 +730,15 @@ class LocalNoteRepository(
 
     private fun CanvasText.toEntity() = CanvasTextEntity(
         id, pageId, elementIndex, x, y, boxWidth, content, colorArgb, textSizeSp, createdAt, updatedAt,
+    )
+
+    private fun CanvasImageEntity.toDomain() = CanvasImage(
+        id, pageId, elementIndex, storageName, originalWidth, originalHeight,
+        orientationDegrees, x, y, boxWidth, boxHeight, createdAt, updatedAt,
+    )
+
+    private fun CanvasImage.toEntity() = CanvasImageEntity(
+        id, pageId, elementIndex, storageName, originalWidth, originalHeight,
+        orientationDegrees, x, y, boxWidth, boxHeight, createdAt, updatedAt,
     )
 }

@@ -14,6 +14,7 @@ import com.kotlinsun.noteup.data.thumbnail.PageThumbnailStore
 import com.kotlinsun.noteup.data.trash.TrashCleanupService
 import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import com.kotlinsun.noteup.data.image.CanvasImageStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +38,7 @@ class DashboardViewModel(
     private val trashCleanupService: TrashCleanupService,
     private val pdfDocumentStore: PdfDocumentStore,
     private val pdfPageRenderStore: PdfPageRenderStore,
+    private val canvasImageStore: CanvasImageStore,
 ) : ViewModel() {
 
     private val filterType = savedStateHandle.getStateFlow(FILTER_TYPE_KEY, FILTER_ALL)
@@ -175,6 +177,7 @@ class DashboardViewModel(
             pdfPageRenderStore.evict(storageName)
             pdfDocumentStore.delete(storageName)
         }
+        assets.imageStorageNames.forEach(canvasImageStore::delete)
     }
 
     private fun updateFilter(type: String) {
@@ -207,6 +210,7 @@ class DashboardViewModel(
         private val trashCleanupService: TrashCleanupService,
         private val pdfDocumentStore: PdfDocumentStore,
         private val pdfPageRenderStore: PdfPageRenderStore,
+        private val canvasImageStore: CanvasImageStore,
     ) : AbstractSavedStateViewModelFactory(owner, null) {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -215,7 +219,7 @@ class DashboardViewModel(
             handle: SavedStateHandle,
         ): T = DashboardViewModel(
             repository, handle, thumbnailStore, thumbnailService, trashCleanupService,
-            pdfDocumentStore, pdfPageRenderStore,
+            pdfDocumentStore, pdfPageRenderStore, canvasImageStore,
         ) as T
     }
 
