@@ -268,11 +268,37 @@
                 android:textAppearance="@style/TextAppearance.NoteUp.Label"
                 android:textColor="@color/noteup_fg_brand" />
 
+            <LinearLayout
+                android:id="@+id/getting_started_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_medium">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/restart_getting_started_title"
+                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:text="@string/restart_getting_started_description"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+            </LinearLayout>
+
             <TextView
                 android:id="@+id/app_version"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_settings_row"
+                android:layout_marginTop="@dimen/spacing_small"
                 android:gravity="center_vertical"
                 android:minHeight="@dimen/settings_row_min_height"
                 android:paddingHorizontal="@dimen/spacing_medium"

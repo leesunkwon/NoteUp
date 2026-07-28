@@ -4,6 +4,7 @@ import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasImage
 
 data class CanvasViewport(
     val scale: Float = 1f,
@@ -23,6 +24,7 @@ sealed interface CanvasUiState {
         val pagePosition: Int,
         val strokes: List<Stroke>,
         val texts: List<CanvasText>,
+        val images: List<CanvasImage>,
         val viewport: CanvasViewport,
         val thumbnailRevisions: Map<Long, Long>,
         val isSaving: Boolean,

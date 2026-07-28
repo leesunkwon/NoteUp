@@ -16,6 +16,7 @@ import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.domain.model.CanvasAppearance
 import com.kotlinsun.noteup.domain.model.CanvasInputMode
 import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasImage
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
 import com.kotlinsun.noteup.domain.model.EraserMode
@@ -28,6 +29,7 @@ import com.kotlinsun.noteup.domain.model.StrokeTool
 import com.kotlinsun.noteup.rendering.CanvasTextRenderer
 import com.kotlinsun.noteup.rendering.PageRenderer
 import com.kotlinsun.noteup.rendering.StrokeRenderer
+import com.kotlinsun.noteup.data.pdf.PdfTileRenderResult
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -89,13 +91,19 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
     private val pageRenderer = PageRenderer(renderer)
     private var pdfBackgroundBitmap: Bitmap? = null
+    private var pdfTiles: List<PdfTileRenderResult> = emptyList()
     private val scaleDetector = ScaleGestureDetector(context, ScaleListener())
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat()
     private val storedStrokes = mutableListOf<Stroke>()
     private val storedTexts = mutableListOf<CanvasText>()
+    private val storedImages = mutableListOf<CanvasImage>()
+    private var imageBitmaps: Map<Long, Bitmap> = emptyMap()
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
     private val storedBounds = mutableMapOf<Long, RectF>()
+    private val storedSpatialIndex = StrokeSpatialIndex(
+        SPATIAL_CELL_DP * resources.displayMetrics.density,
+    )
     private val pendingBounds = mutableMapOf<Long, RectF>()
     private val erasedInGesture = linkedMapOf<String, ErasableStroke>()
     private val eraserPath = mutableListOf<Pair<Float, Float>>()
@@ -144,6 +152,11 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var lastTextTapY = 0f
     private var temporaryEraserActive = false
     private var suppressStylusUntilUp = false
+    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val missingImagePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = context.getColor(R.color.noteup_bg_neutral_weak)
+        style = Paint.Style.FILL
+    }
 
     fun setTexts(texts: List<CanvasText>) {
         storedTexts.clear()
@@ -151,6 +164,26 @@ class DrawingCanvasView @JvmOverloads constructor(
         selection = CanvasSelection(
             selection.strokes.mapNotNull { selected -> storedStrokes.firstOrNull { it.id == selected.id } },
             selection.texts.mapNotNull { selected -> texts.firstOrNull { it.id == selected.id } },
+            selection.images.mapNotNull { selected -> storedImages.firstOrNull { it.id == selected.id } },
+        )
+        updateSelectionBounds()
+        rebuildStrokeBitmap()
+        invalidate()
+    }
+
+    fun setImages(images: List<CanvasImage>, bitmaps: Map<Long, Bitmap>) {
+        storedImages.clear()
+        storedImages.addAll(images)
+        val imageIds = images.mapTo(hashSetOf(), CanvasImage::id)
+        imageBitmaps = when {
+            images.isEmpty() -> emptyMap()
+            bitmaps.isNotEmpty() -> bitmaps
+            else -> imageBitmaps.filterKeys { it in imageIds }
+        }
+        selection = CanvasSelection(
+            selection.strokes.mapNotNull { selected -> storedStrokes.firstOrNull { it.id == selected.id } },
+            selection.texts.mapNotNull { selected -> storedTexts.firstOrNull { it.id == selected.id } },
+            selection.images.mapNotNull { selected -> images.firstOrNull { it.id == selected.id } },
         )
         updateSelectionBounds()
         rebuildStrokeBitmap()
@@ -200,8 +233,11 @@ class DrawingCanvasView @JvmOverloads constructor(
             areaPreview = emptyList()
             selection = CanvasSelection()
             storedTexts.clear()
+            storedImages.clear()
+            imageBitmaps = emptyMap()
             currentPageId = pageId
             pdfBackgroundBitmap = null
+            pdfTiles = emptyList()
         }
         pageTemplate = template
         setViewport(viewport, notify = false)
@@ -213,6 +249,11 @@ class DrawingCanvasView @JvmOverloads constructor(
         pdfBackgroundBitmap = bitmap
         rebuildBoundsCache()
         rebuildStrokeBitmap()
+        invalidate()
+    }
+
+    fun setPdfTiles(tiles: List<PdfTileRenderResult>) {
+        pdfTiles = tiles
         invalidate()
     }
 
@@ -587,8 +628,11 @@ class DrawingCanvasView @JvmOverloads constructor(
         val pageRect = pageContentRect()
         val localX = x - pageRect.left
         val localY = y - pageRect.top
+        val candidateIds = storedSpatialIndex.query(
+            RectF(x - radius, y - radius, x + radius, y + radius),
+        )
         val hitStored = storedStrokes.filter { stroke ->
-            "stored:${stroke.id}" !in erasedInGesture &&
+            stroke.id in candidateIds && "stored:${stroke.id}" !in erasedInGesture &&
                 boundsHits(storedBounds[stroke.id], x, y, radius) && StrokeHitTester.hits(
                 stroke.points, stroke.tool, stroke.width, localX, localY, radius,
                 pageRect.width().toInt(), pageRect.height().toInt(),
@@ -965,7 +1009,16 @@ class DrawingCanvasView @JvmOverloads constructor(
     private fun createAreaReplacements(): List<AreaEraseReplacement> {
         if (eraserPath.isEmpty()) return emptyList()
         val density = resources.displayMetrics.density
-        val persisted = storedStrokes.filter { areaPathHits(storedBounds[it.id]) }
+        val queryBounds = RectF(
+            eraserPath.minOf { it.first } - eraserRadiusPx(),
+            eraserPath.minOf { it.second } - eraserRadiusPx(),
+            eraserPath.maxOf { it.first } + eraserRadiusPx(),
+            eraserPath.maxOf { it.second } + eraserRadiusPx(),
+        )
+        val candidateIds = storedSpatialIndex.query(queryBounds)
+        val persisted = storedStrokes.filter {
+            it.id in candidateIds && areaPathHits(storedBounds[it.id])
+        }
             .map { ErasableStroke.Persisted(it) to it.toDraft() }
         val pending = pendingStrokes.filter { areaPathHits(pendingBounds[it.token]) }
             .map { ErasableStroke.Pending(it) to it.draft }
@@ -1059,7 +1112,9 @@ class DrawingCanvasView @JvmOverloads constructor(
             pageY(activePoints.maxOf { it.y }),
         )
         val polygon = activePoints.map { pageX(it.x) to pageY(it.y) }
+        val lassoCandidates = storedSpatialIndex.query(lassoBounds)
         val strokes = storedStrokes.filter { stroke ->
+            stroke.id in lassoCandidates &&
             storedBounds[stroke.id]?.let { RectF.intersects(it, lassoBounds) } == true &&
                 (stroke.points.any { pointInPolygon(pageX(it.x), pageY(it.y), polygon) } ||
                     polygon.any { (x, y) -> storedBounds[stroke.id]?.contains(x, y) == true })
@@ -1074,7 +1129,17 @@ class DrawingCanvasView @JvmOverloads constructor(
                     polygon.any { (x, y) -> bounds.contains(x, y) }
                 )
         }
-        selectElements(CanvasSelection(strokes, texts))
+        val images = storedImages.filter { image ->
+            val bounds = imageBounds(image)
+            RectF.intersects(bounds, lassoBounds) && (
+                listOf(
+                    bounds.left to bounds.top, bounds.right to bounds.top,
+                    bounds.right to bounds.bottom, bounds.left to bounds.bottom,
+                ).any { (x, y) -> pointInPolygon(x, y, polygon) } ||
+                    polygon.any { (x, y) -> bounds.contains(x, y) }
+                )
+        }
+        selectElements(CanvasSelection(strokes, texts, images))
     }
 
     private fun pointInPolygon(x: Float, y: Float, polygon: List<Pair<Float, Float>>): Boolean {
@@ -1095,6 +1160,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         selectionBounds.setEmpty()
         selection.strokes.forEach { storedBounds[it.id]?.let(selectionBounds::union) }
         selection.texts.forEach { selectionBounds.union(textBounds(it)) }
+        selection.images.forEach { selectionBounds.union(imageBounds(it)) }
     }
 
     private fun textBounds(value: CanvasText): RectF = RectF(
@@ -1104,6 +1170,13 @@ class DrawingCanvasView @JvmOverloads constructor(
         pageY(value.y) + textRenderer.height(
             value, pageContentRect().width().toInt(), resources.displayMetrics.density,
         ),
+    )
+
+    private fun imageBounds(value: CanvasImage): RectF = RectF(
+        pageX(value.x),
+        pageY(value.y),
+        pageX(value.x + value.boxWidth),
+        pageY(value.y + value.boxHeight),
     )
 
     private fun updateSelectionTransform(x: Float, y: Float) {
@@ -1152,9 +1225,19 @@ class DrawingCanvasView @JvmOverloads constructor(
                 updatedAt = System.currentTimeMillis(),
             )
         }
+        val images = source.images.map { image ->
+            image.copy(
+                x = originX + (image.x - originX) * scale + translatedX,
+                y = originY + (image.y - originY) * scale + translatedY,
+                boxWidth = (image.boxWidth * scale).coerceAtLeast(MINIMUM_IMAGE_SIZE),
+                boxHeight = (image.boxHeight * scale).coerceAtLeast(MINIMUM_IMAGE_SIZE),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
         strokes.forEach { changed -> storedStrokes.indexOfFirst { it.id == changed.id }.takeIf { it >= 0 }?.let { storedStrokes[it] = changed } }
         texts.forEach { changed -> storedTexts.indexOfFirst { it.id == changed.id }.takeIf { it >= 0 }?.let { storedTexts[it] = changed } }
-        selection = CanvasSelection(strokes, texts)
+        images.forEach { changed -> storedImages.indexOfFirst { it.id == changed.id }.takeIf { it >= 0 }?.let { storedImages[it] = changed } }
+        selection = CanvasSelection(strokes, texts, images)
         rebuildBoundsCache()
         rebuildStrokeBitmap()
         updateSelectionBounds()
@@ -1205,7 +1288,8 @@ class DrawingCanvasView @JvmOverloads constructor(
             canvas.save()
             canvas.translate(pageRect.left, pageRect.top)
             val elements: List<Pair<Int, Any>> = storedStrokes.map { it.strokeIndex to it as Any } +
-                storedTexts.map { it.elementIndex to it as Any }
+                storedTexts.map { it.elementIndex to it as Any } +
+                storedImages.map { it.elementIndex to it as Any }
             elements.sortedBy { it.first }.forEach { (_, element) ->
                 when (element) {
                     is Stroke -> renderer.draw(
@@ -1218,6 +1302,7 @@ class DrawingCanvasView @JvmOverloads constructor(
                         pageRect.width().toInt(), pageRect.height().toInt(),
                         resources.displayMetrics.density,
                     )
+                    is CanvasImage -> drawImage(canvas, element, pageRect.width(), pageRect.height())
                 }
             }
             canvas.restore()
@@ -1250,33 +1335,33 @@ class DrawingCanvasView @JvmOverloads constructor(
         val hiddenIds = areaPreview.mapNotNullTo(hashSetOf()) {
             (it.target as? ErasableStroke.Persisted)?.stroke?.id
         }
-        storedStrokes.filterNot { it.id in hiddenIds }
+        val elements: List<Pair<Int, Any>> = storedStrokes
+            .filterNot { it.id in hiddenIds }
             .filter { storedBounds[it.id]?.let { bounds -> RectF.intersects(bounds, currentDirty) } == true }
-            .sortedBy(Stroke::strokeIndex)
-            .forEach { stroke ->
-                val pageRect = pageContentRect()
-                canvas.save()
-                canvas.translate(pageRect.left, pageRect.top)
-                renderer.draw(
-                    canvas, stroke.points, displayColor(stroke.colorArgb), stroke.width,
+            .map { it.strokeIndex to it as Any } +
+            storedTexts.filter { RectF.intersects(textBounds(it), currentDirty) }
+                .map { it.elementIndex to it as Any } +
+            storedImages.filter { RectF.intersects(imageBounds(it), currentDirty) }
+                .map { it.elementIndex to it as Any }
+        val pageRect = pageContentRect()
+        canvas.save()
+        canvas.translate(pageRect.left, pageRect.top)
+        elements.sortedBy { it.first }.forEach { (_, element) ->
+            when (element) {
+                is Stroke -> renderer.draw(
+                    canvas, element.points, displayColor(element.colorArgb), element.width,
                     pageRect.width().toInt(), pageRect.height().toInt(),
-                    resources.displayMetrics.density, stroke.tool,
+                    resources.displayMetrics.density, element.tool,
                 )
-                canvas.restore()
-            }
-        storedTexts.filter { RectF.intersects(textBounds(it), currentDirty) }
-            .sortedBy(CanvasText::elementIndex)
-            .forEach {
-                val pageRect = pageContentRect()
-                canvas.save()
-                canvas.translate(pageRect.left, pageRect.top)
-                textRenderer.draw(
-                    canvas, it.copy(colorArgb = displayColor(it.colorArgb)),
+                is CanvasText -> textRenderer.draw(
+                    canvas, element.copy(colorArgb = displayColor(element.colorArgb)),
                     pageRect.width().toInt(), pageRect.height().toInt(),
                     resources.displayMetrics.density,
                 )
-                canvas.restore()
+                is CanvasImage -> drawImage(canvas, element, pageRect.width(), pageRect.height())
             }
+        }
+        canvas.restore()
         areaPreview.filter { it.target is ErasableStroke.Persisted }
             .flatMap(AreaEraseReplacement::fragments)
             .forEach { drawStroke(canvas, it) }
@@ -1291,7 +1376,12 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun rebuildBoundsCache() {
         storedBounds.clear()
-        storedStrokes.forEach { storedBounds[it.id] = boundsFor(it.toDraft()) }
+        storedSpatialIndex.clear()
+        storedStrokes.forEach {
+            val bounds = boundsFor(it.toDraft())
+            storedBounds[it.id] = bounds
+            storedSpatialIndex.insert(it.id, bounds)
+        }
         pendingBounds.clear()
         pendingStrokes.forEach { pendingBounds[it.token] = boundsFor(it.draft) }
     }
@@ -1335,7 +1425,19 @@ class DrawingCanvasView @JvmOverloads constructor(
             )
         } else {
             canvas.drawColor(context.getColor(R.color.noteup_page))
-            canvas.drawBitmap(background, null, pageRenderer.fitCenterRect(width, height, background), null)
+            val pageRect = pageRenderer.fitCenterRect(width, height, background)
+            canvas.drawBitmap(background, null, pageRect, null)
+            pdfTiles.forEach { tile ->
+                if (tile.bitmap.isRecycled) return@forEach
+                val fraction = 1f / tile.gridSize
+                val target = RectF(
+                    pageRect.left + pageRect.width() * tile.tileX * fraction,
+                    pageRect.top + pageRect.height() * tile.tileY * fraction,
+                    pageRect.left + pageRect.width() * (tile.tileX + 1) * fraction,
+                    pageRect.top + pageRect.height() * (tile.tileY + 1) * fraction,
+                )
+                canvas.drawBitmap(tile.bitmap, null, target, imagePaint)
+            }
         }
     }
 
@@ -1349,6 +1451,18 @@ class DrawingCanvasView @JvmOverloads constructor(
             resources.displayMetrics.density, stroke.tool,
         )
         canvas.restore()
+    }
+
+    private fun drawImage(canvas: Canvas, image: CanvasImage, pageWidth: Float, pageHeight: Float) {
+        val target = RectF(
+            image.x * pageWidth,
+            image.y * pageHeight,
+            (image.x + image.boxWidth) * pageWidth,
+            (image.y + image.boxHeight) * pageHeight,
+        )
+        val bitmap = imageBitmaps[image.id]?.takeUnless { it.isRecycled }
+        if (bitmap == null) canvas.drawRect(target, missingImagePaint)
+        else canvas.drawBitmap(bitmap, null, target, imagePaint)
     }
 
     private fun usesDarkPaper(): Boolean =
@@ -1454,6 +1568,8 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
         const val PAGE_SWIPE_DIRECTION_RATIO = 1.25f
         const val DEFAULT_TOUCH_PRESSURE = 0.5f
+        const val MINIMUM_IMAGE_SIZE = 0.03f
+        const val SPATIAL_CELL_DP = 128f
         val STYLUS_ERASER_BUTTONS =
             MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY
     }

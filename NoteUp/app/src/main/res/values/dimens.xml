@@ -88,4 +88,5 @@
     <dimen name="color_picker_height">232dp</dimen>
     <dimen name="color_preview_height">44dp</dimen>
     <dimen name="color_manage_swatch_size">32dp</dimen>
+    <dimen name="onboarding_preview_height">180dp</dimen>
 </resources>

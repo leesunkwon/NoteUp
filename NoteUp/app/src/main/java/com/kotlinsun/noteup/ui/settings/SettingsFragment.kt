@@ -24,6 +24,7 @@ import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.ThemeMode
 import com.kotlinsun.noteup.nightMode
 import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
+import com.kotlinsun.noteup.ui.onboarding.GettingStartedDialogFragment
 import kotlinx.coroutines.launch
 
 class SettingsFragment : Fragment() {
@@ -69,6 +70,9 @@ class SettingsFragment : Fragment() {
         canvasInputModeRow.setOnClickListener { showCanvasInputModeDialog() }
         trashRetentionCard.setOnClickListener { showRetentionDialog() }
         resetSettingsRow.setOnClickListener { confirmReset() }
+        gettingStartedRow.setOnClickListener {
+            GettingStartedDialogFragment.show(childFragmentManager)
+        }
 
         behaviorSection.pageSwipeRow.setOnClickListener {
             behaviorSection.pageSwipeSwitch.toggle()

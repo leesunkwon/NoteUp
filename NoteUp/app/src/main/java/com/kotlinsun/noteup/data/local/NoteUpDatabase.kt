@@ -7,9 +7,11 @@ import com.kotlinsun.noteup.data.local.dao.NotebookDao
 import com.kotlinsun.noteup.data.local.dao.PageDao
 import com.kotlinsun.noteup.data.local.dao.StrokeDao
 import com.kotlinsun.noteup.data.local.dao.CanvasTextDao
+import com.kotlinsun.noteup.data.local.dao.CanvasImageDao
 import com.kotlinsun.noteup.data.local.dao.ImportedPdfDao
 import com.kotlinsun.noteup.data.local.dao.PdfPageBackgroundDao
 import com.kotlinsun.noteup.data.local.entity.CanvasTextEntity
+import com.kotlinsun.noteup.data.local.entity.CanvasImageEntity
 import com.kotlinsun.noteup.data.local.entity.NoteEntity
 import com.kotlinsun.noteup.data.local.entity.NotebookEntity
 import com.kotlinsun.noteup.data.local.entity.PageEntity
@@ -19,8 +21,9 @@ import com.kotlinsun.noteup.data.local.entity.PdfPageBackgroundEntity
 
 @Database(
     entities = [NotebookEntity::class, NoteEntity::class, PageEntity::class, StrokeEntity::class,
-        CanvasTextEntity::class, ImportedPdfEntity::class, PdfPageBackgroundEntity::class],
-    version = 5,
+        CanvasTextEntity::class, CanvasImageEntity::class, ImportedPdfEntity::class,
+        PdfPageBackgroundEntity::class],
+    version = 6,
     exportSchema = true,
 )
 abstract class NoteUpDatabase : RoomDatabase() {
@@ -29,6 +32,7 @@ abstract class NoteUpDatabase : RoomDatabase() {
     abstract fun pageDao(): PageDao
     abstract fun strokeDao(): StrokeDao
     abstract fun canvasTextDao(): CanvasTextDao
+    abstract fun canvasImageDao(): CanvasImageDao
     abstract fun importedPdfDao(): ImportedPdfDao
     abstract fun pdfPageBackgroundDao(): PdfPageBackgroundDao
 }

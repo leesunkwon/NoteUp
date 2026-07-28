@@ -28,6 +28,7 @@ data class PdfImportPage(
 data class DeletedAssets(
     val pageIds: List<Long> = emptyList(),
     val pdfStorageNames: List<String> = emptyList(),
+    val imageStorageNames: List<String> = emptyList(),
 )
 
 enum class PageTemplate {

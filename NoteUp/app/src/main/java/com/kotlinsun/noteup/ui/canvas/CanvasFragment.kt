@@ -48,6 +48,7 @@ import com.kotlinsun.noteup.databinding.PopupToolSettingsBinding
 import com.kotlinsun.noteup.domain.model.AppSettings
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
+import com.kotlinsun.noteup.domain.model.CanvasImage
 import com.kotlinsun.noteup.domain.model.DrawingSettings
 import com.kotlinsun.noteup.domain.model.DrawingTool
 import com.kotlinsun.noteup.domain.model.EraserMode
@@ -69,6 +70,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 class CanvasFragment : Fragment() {
@@ -76,6 +78,7 @@ class CanvasFragment : Fragment() {
     private val binding get() = checkNotNull(_binding)
     private var renderedStrokes: List<Stroke> = emptyList()
     private var renderedTexts: List<CanvasText> = emptyList()
+    private var renderedImages: List<CanvasImage> = emptyList()
     private var renderedPageId: Long? = null
     private var currentSettings = DrawingSettings()
     private var currentAppSettings = AppSettings()
@@ -88,10 +91,18 @@ class CanvasFragment : Fragment() {
     private var pdfPageLoading = false
     private var pdfDisplayedPageId: Long? = null
     private var pdfRenderGeneration = 0L
+    private var pdfTileJob: Job? = null
+    private var pdfTileGeneration = 0L
+    private var pdfTileKey: String? = null
     private var currentZoomScale = MIN_ZOOM
     private var toolSettingsPopup: PopupWindow? = null
     private var toolSettingsBinding: PopupToolSettingsBinding? = null
     private var currentCustomColors: List<Int> = emptyList()
+    private var imageRenderJob: Job? = null
+    private var imageRenderGeneration = 0L
+    private var imageRenderKey: String? = null
+    private var pagePreloadJob: Job? = null
+    private var pagePreloadKey: String? = null
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -106,6 +117,9 @@ class CanvasFragment : Fragment() {
             }
         }
     }
+    private val imagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let(viewModel::importImage) }
     private val pageAdapter by lazy {
         val store = (requireActivity().application as NoteUpApplication).container.pageThumbnailStore
         PageThumbnailAdapter(
@@ -134,6 +148,7 @@ class CanvasFragment : Fragment() {
             container.noteExportService,
             container.pdfDocumentStore,
             container.pdfPageRenderStore,
+            container.canvasImageStore,
         )
     }
 
@@ -374,12 +389,15 @@ class CanvasFragment : Fragment() {
             )
             renderCanvasAccessibility()
             pageAdapter.submitPages(state.pages, state.page.id, state.thumbnailRevisions)
+            preloadAdjacentPages(state)
             renderPdfBackground(state.page, state.viewport.scale)
+            renderPdfTiles(state.page, state.viewport)
             if (renderedPageId != state.page.id) {
                 dismissToolSettingsPopup()
                 renderedPageId = state.page.id
                 renderedStrokes = state.strokes
                 renderedTexts = state.texts
+                renderedImages = state.images
                 drawingCanvas.showPage(
                     state.page.id,
                     state.page.templateType,
@@ -387,6 +405,8 @@ class CanvasFragment : Fragment() {
                     state.viewport,
                 )
                 drawingCanvas.setTexts(state.texts)
+                drawingCanvas.setImages(state.images, emptyMap())
+                renderCanvasImages(state.images, state.viewport.scale, force = true)
             } else {
                 if (renderedStrokes != state.strokes) {
                     renderedStrokes = state.strokes
@@ -395,6 +415,13 @@ class CanvasFragment : Fragment() {
                 if (renderedTexts != state.texts) {
                     renderedTexts = state.texts
                     drawingCanvas.setTexts(state.texts)
+                }
+                if (renderedImages != state.images) {
+                    renderedImages = state.images
+                    drawingCanvas.setImages(state.images, emptyMap())
+                    renderCanvasImages(state.images, state.viewport.scale, force = true)
+                } else {
+                    renderCanvasImages(state.images, state.viewport.scale)
                 }
                 drawingCanvas.setViewport(state.viewport)
             }
@@ -553,10 +580,20 @@ class CanvasFragment : Fragment() {
     private fun showMoreMenu() {
         val state = currentState as? CanvasUiState.Ready
         PopupMenu(requireContext(), binding.moreButton).apply {
-            menu.add(0, MORE_EXPORT_ID, 0, R.string.export).isEnabled = state != null && !state.isBusy
-            menu.add(0, MORE_SHORTCUTS_ID, 1, R.string.keyboard_shortcuts)
+            menu.add(0, MORE_INSERT_IMAGE_ID, 0, R.string.insert_image).isEnabled =
+                state != null && !state.isBusy
+            menu.add(0, MORE_EXPORT_ID, 1, R.string.export).isEnabled = state != null && !state.isBusy
+            menu.add(0, MORE_SHORTCUTS_ID, 2, R.string.keyboard_shortcuts)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
+                    MORE_INSERT_IMAGE_ID -> {
+                        imagePickerLauncher.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                        true
+                    }
                     MORE_EXPORT_ID -> {
                         showExportFormatDialog()
                         true
@@ -799,13 +836,13 @@ class CanvasFragment : Fragment() {
         val isBusy = state?.isBusy != false
         val selection = drawingCanvas.currentSelection()
         val hasSingleTextSelection = settings.tool == DrawingTool.TEXT &&
-            selection.texts.size == 1 && selection.strokes.isEmpty()
+            selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty()
         val showSelectionActions = (isLasso && hasSelection) || hasSingleTextSelection
         copySelectionButton.isVisible = showSelectionActions
         deleteSelectionButton.isVisible = showSelectionActions
         pasteSelectionButton.isVisible = isLasso && canPaste
         editTextButton.isVisible = (isLasso || settings.tool == DrawingTool.TEXT) &&
-            selection.texts.size == 1 && selection.strokes.isEmpty()
+            selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty()
         listOf(copySelectionButton, pasteSelectionButton, deleteSelectionButton, editTextButton)
             .forEach { it.isEnabled = !isBusy }
         selectionActionsBar.isVisible = showSelectionActions || (isLasso && canPaste)
@@ -1349,10 +1386,14 @@ class CanvasFragment : Fragment() {
             val state = currentState as? CanvasUiState.Ready
             val strokes = state?.strokes.orEmpty()
             val texts = state?.texts.orEmpty()
+            val images = state?.images.orEmpty()
             renderedStrokes = strokes
             renderedTexts = texts
+            renderedImages = images
             binding.drawingCanvas.refreshVisibleStrokes(strokes)
             binding.drawingCanvas.setTexts(texts)
+            binding.drawingCanvas.setImages(images, emptyMap())
+            renderCanvasImages(images, state?.viewport?.scale ?: MIN_ZOOM, force = true)
         }
     }
 
@@ -1368,6 +1409,71 @@ class CanvasFragment : Fragment() {
     private fun performHapticFeedback() {
         if (!currentAppSettings.hapticFeedbackEnabled || _binding == null) return
         binding.root.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    }
+
+    private fun renderCanvasImages(
+        images: List<CanvasImage>,
+        scale: Float,
+        force: Boolean = false,
+    ) {
+        if (_binding == null) return
+        if (images.isEmpty()) {
+            imageRenderJob?.cancel()
+            imageRenderJob = null
+            imageRenderKey = null
+            binding.drawingCanvas.setImages(emptyList(), emptyMap())
+            return
+        }
+        val canvasEdge = maxOf(binding.drawingCanvas.width, binding.drawingCanvas.height, 1024)
+        val requestedEdge = (canvasEdge * scale.coerceAtLeast(1f)).roundToInt()
+            .coerceAtMost(MAX_IMAGE_RENDER_EDGE)
+        val bucket = ((requestedEdge + IMAGE_RENDER_BUCKET - 1) / IMAGE_RENDER_BUCKET) *
+            IMAGE_RENDER_BUCKET
+        val key = images.joinToString(separator = ",", postfix = ":$bucket") {
+            "${it.id}:${it.storageName}:${it.updatedAt}"
+        }
+        if (!force && imageRenderKey == key) return
+        imageRenderKey = key
+        imageRenderGeneration += 1
+        val generation = imageRenderGeneration
+        val pageId = renderedPageId
+        imageRenderJob?.cancel()
+        imageRenderJob = viewLifecycleOwner.lifecycleScope.launch {
+            val store = (requireActivity().application as NoteUpApplication).container.canvasImageStore
+            val bitmaps = images.mapNotNull { image ->
+                store.load(image.storageName, bucket)?.let { image.id to it }
+            }.toMap()
+            if (generation != imageRenderGeneration || renderedPageId != pageId || _binding == null) {
+                return@launch
+            }
+            binding.drawingCanvas.setImages(images, bitmaps)
+        }
+    }
+
+    private fun preloadAdjacentPages(state: CanvasUiState.Ready) {
+        val adjacent = listOfNotNull(
+            state.pages.getOrNull(state.pagePosition - 1),
+            state.pages.getOrNull(state.pagePosition + 1),
+        )
+        val key = adjacent.joinToString { "${it.id}:${it.updatedAt}" }
+        if (pagePreloadKey == key) return
+        pagePreloadKey = key
+        pagePreloadJob?.cancel()
+        pagePreloadJob = viewLifecycleOwner.lifecycleScope.launch {
+            val container = (requireActivity().application as NoteUpApplication).container
+            adjacent.forEach { page ->
+                page.pdfBackground?.let { background ->
+                    runCatching { container.pdfPageRenderStore.renderDisplay(background, PRELOAD_EDGE) }
+                }
+                runCatching { container.noteRepository.getImages(page.id) }
+                    .getOrDefault(emptyList())
+                    .forEach { image ->
+                        runCatching {
+                            container.canvasImageStore.load(image.storageName, PRELOAD_IMAGE_EDGE)
+                        }
+                    }
+            }
+        }
     }
 
     private fun renderPdfBackground(
@@ -1439,6 +1545,73 @@ class CanvasFragment : Fragment() {
         }
     }
 
+    private fun renderPdfTiles(page: Page, viewport: CanvasViewport) {
+        val background = page.pdfBackground
+        if (background == null || viewport.scale < PDF_TILE_MIN_SCALE ||
+            binding.drawingCanvas.width <= 0 || binding.drawingCanvas.height <= 0
+        ) {
+            pdfTileJob?.cancel()
+            pdfTileJob = null
+            pdfTileKey = null
+            binding.drawingCanvas.setPdfTiles(emptyList())
+            return
+        }
+        val gridSize = when {
+            viewport.scale >= 3.5f -> 8
+            viewport.scale >= 2.25f -> 4
+            else -> 2
+        }
+        val canvasWidth = binding.drawingCanvas.width.toFloat()
+        val canvasHeight = binding.drawingCanvas.height.toFloat()
+        val pageRatio = background.widthPoints.toFloat() / background.heightPoints.coerceAtLeast(1)
+        val canvasRatio = canvasWidth / canvasHeight.coerceAtLeast(1f)
+        val pageWidth: Float
+        val pageHeight: Float
+        val pageLeft: Float
+        val pageTop: Float
+        if (canvasRatio >= pageRatio) {
+            pageHeight = canvasHeight
+            pageWidth = pageHeight * pageRatio
+            pageLeft = (canvasWidth - pageWidth) / 2f
+            pageTop = 0f
+        } else {
+            pageWidth = canvasWidth
+            pageHeight = pageWidth / pageRatio
+            pageLeft = 0f
+            pageTop = (canvasHeight - pageHeight) / 2f
+        }
+        val visibleLeft = ((-viewport.offsetX) / viewport.scale - pageLeft) / pageWidth
+        val visibleTop = ((-viewport.offsetY) / viewport.scale - pageTop) / pageHeight
+        val visibleRight = ((canvasWidth - viewport.offsetX) / viewport.scale - pageLeft) / pageWidth
+        val visibleBottom = ((canvasHeight - viewport.offsetY) / viewport.scale - pageTop) / pageHeight
+        val firstX = (floor(visibleLeft.coerceIn(0f, 1f) * gridSize).toInt() - 1)
+            .coerceIn(0, gridSize - 1)
+        val lastX = (floor(visibleRight.coerceIn(0f, 0.9999f) * gridSize).toInt() + 1)
+            .coerceIn(0, gridSize - 1)
+        val firstY = (floor(visibleTop.coerceIn(0f, 1f) * gridSize).toInt() - 1)
+            .coerceIn(0, gridSize - 1)
+        val lastY = (floor(visibleBottom.coerceIn(0f, 0.9999f) * gridSize).toInt() + 1)
+            .coerceIn(0, gridSize - 1)
+        val coordinates = buildList {
+            for (y in firstY..lastY) for (x in firstX..lastX) add(x to y)
+        }
+        val key = "${page.id}:$gridSize:${coordinates.joinToString()}"
+        if (pdfTileKey == key) return
+        pdfTileKey = key
+        pdfTileGeneration += 1
+        val generation = pdfTileGeneration
+        pdfTileJob?.cancel()
+        pdfTileJob = viewLifecycleOwner.lifecycleScope.launch {
+            val store = (requireActivity().application as NoteUpApplication).container.pdfPageRenderStore
+            val tiles = coordinates.mapNotNull { (x, y) ->
+                runCatching { store.renderDisplayTile(background, x, y, gridSize) }.getOrNull()
+            }
+            if (generation == pdfTileGeneration && renderedPageId == page.id && _binding != null) {
+                binding.drawingCanvas.setPdfTiles(tiles)
+            }
+        }
+    }
+
     private fun panelColorButtons(panel: PopupToolSettingsBinding): List<MaterialButton> = with(panel) {
         listOf(blackColorButton, blueColorButton, redColorButton, greenColorButton)
     }
@@ -1468,6 +1641,17 @@ class CanvasFragment : Fragment() {
         pdfDisplayedPageId = null
         pdfRenderJob?.cancel()
         pdfRenderJob = null
+        pdfTileGeneration += 1
+        pdfTileKey = null
+        pdfTileJob?.cancel()
+        pdfTileJob = null
+        imageRenderGeneration += 1
+        imageRenderKey = null
+        imageRenderJob?.cancel()
+        imageRenderJob = null
+        pagePreloadKey = null
+        pagePreloadJob?.cancel()
+        pagePreloadJob = null
         pagePanelOpen = binding.pagePanel.isVisible
         binding.drawingCanvas.onStrokeCompleted = null
         binding.drawingCanvas.onStrokesErased = null
@@ -1482,6 +1666,7 @@ class CanvasFragment : Fragment() {
         binding.pageList.adapter = null
         renderedStrokes = emptyList()
         renderedTexts = emptyList()
+        renderedImages = emptyList()
         renderedPageId = null
         _binding = null
         super.onDestroyView()
@@ -1491,6 +1676,7 @@ class CanvasFragment : Fragment() {
         const val PDF_RENDER_BUCKET = 512
         const val PDF_RENDER_DEBOUNCE_MILLIS = 120L
         const val PDF_RENDER_OVERSAMPLE = 1.25f
+        const val PDF_TILE_MIN_SCALE = 1.5f
         const val NOTE_ID_ARGUMENT = "noteId"
         const val INVALID_NOTE_ID = -1L
         const val DEFAULT_TEXT_WIDTH = 0.35f
@@ -1503,6 +1689,11 @@ class CanvasFragment : Fragment() {
         const val COLOR_HEX_RADIX = 16
         const val MORE_EXPORT_ID = 10
         const val MORE_SHORTCUTS_ID = 11
+        const val MORE_INSERT_IMAGE_ID = 12
+        const val IMAGE_RENDER_BUCKET = 512
+        const val MAX_IMAGE_RENDER_EDGE = 4096
+        const val PRELOAD_EDGE = 1024
+        const val PRELOAD_IMAGE_EDGE = 512
         const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"
         val SHAPE_TOOLS = setOf(DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE)
         val DRAWING_OPTION_TOOLS = setOf(

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.kotlinsun.noteup.data.export.NoteExportService
 import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import com.kotlinsun.noteup.data.image.CanvasImageStore
 import com.kotlinsun.noteup.data.preferences.CustomColorPaletteStore
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
@@ -24,6 +25,8 @@ import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.StrokeDraft
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
+import com.kotlinsun.noteup.domain.model.CanvasImage
+import com.kotlinsun.noteup.domain.model.CanvasImageDraft
 import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.domain.model.highlighterColor
 import com.kotlinsun.noteup.domain.model.opaqueColor
@@ -65,6 +68,7 @@ class CanvasViewModel(
     private val exportService: NoteExportService,
     private val pdfDocumentStore: PdfDocumentStore,
     private val pdfPageRenderStore: PdfPageRenderStore,
+    private val canvasImageStore: CanvasImageStore,
 ) : ViewModel() {
 
     private val operationQueue = Channel<CanvasOperation>(Channel.UNLIMITED)
@@ -104,9 +108,12 @@ class CanvasViewModel(
             } else {
                 thumbnailService.ensure(pages.map(Page::id))
                 combine(
-                    repository.observeStrokes(page.id), repository.observeTexts(page.id),
-                    suppressedStrokeIds, thumbnailStore.revisions,
-                ) { strokes, texts, hidden, revisions ->
+                    repository.observeStrokes(page.id),
+                    repository.observeTexts(page.id),
+                    repository.observeImages(page.id),
+                    suppressedStrokeIds,
+                    thumbnailStore.revisions,
+                ) { strokes, texts, images, hidden, revisions ->
                     CanvasUiState.Ready(
                         note = note,
                         pages = pages,
@@ -114,6 +121,7 @@ class CanvasViewModel(
                         pagePosition = pages.indexOfFirst { it.id == page.id },
                         strokes = strokes.filterNot { it.id in hidden },
                         texts = texts,
+                        images = images,
                         viewport = CanvasViewport(),
                         thumbnailRevisions = revisions,
                         isSaving = false,
@@ -222,6 +230,19 @@ class CanvasViewModel(
     fun addText(draft: CanvasTextDraft) {
         val pageId = (uiState.value as? CanvasUiState.Ready)?.page?.id ?: return
         if (draft.content.isNotBlank()) enqueue(CanvasOperation.AddText(draft, pageId))
+    }
+
+    fun importImage(uri: Uri) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value > 0) return
+        val pageAspectRatio = state.page.pdfBackground?.let {
+            it.widthPoints.toFloat() / it.heightPoints.coerceAtLeast(1)
+        } ?: state.viewport.let { viewport ->
+            if (viewport.referenceWidth > 0 && viewport.referenceHeight > 0) {
+                viewport.referenceWidth.toFloat() / viewport.referenceHeight
+            } else DEFAULT_PAGE_ASPECT_RATIO
+        }
+        enqueue(CanvasOperation.ImportImage(uri, state.page.id, pageAspectRatio))
     }
 
     fun exportCurrentPage(format: ExportFormat) {
@@ -419,6 +440,7 @@ class CanvasViewModel(
                 is CanvasOperation.Erase -> processErase(operation.targets)
                 is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
                 is CanvasOperation.AddText -> processAddText(operation.draft, operation.pageId)
+                is CanvasOperation.ImportImage -> processImportImage(operation)
                 is CanvasOperation.TransformSelection -> processTransformSelection(operation.change)
                 is CanvasOperation.DeleteSelection -> processDeleteSelection(operation.selection)
                 is CanvasOperation.PasteSelection -> processPasteSelection(
@@ -458,18 +480,55 @@ class CanvasViewModel(
     private suspend fun processAddText(draft: CanvasTextDraft, pageId: Long) {
         val text = repository.addText(noteId, pageId, draft)
         selectionState.value = CanvasSelection(texts = listOf(text))
-        pushNewCommand(CanvasCommand.ElementsAdded(emptyList(), listOf(text)))
+        pushNewCommand(CanvasCommand.ElementsAdded(emptyList(), listOf(text), emptyList()))
         thumbnailService.request(pageId)
     }
 
+    private suspend fun processImportImage(operation: CanvasOperation.ImportImage) {
+        var storageName: String? = null
+        try {
+            val imported = canvasImageStore.importImage(operation.uri)
+            storageName = imported.storageName
+            val rotated = imported.orientationDegrees == 90 || imported.orientationDegrees == 270
+            val imageWidth = if (rotated) imported.height else imported.width
+            val imageHeight = if (rotated) imported.width else imported.height
+            val imageAspectRatio = imageWidth.toFloat() / imageHeight.coerceAtLeast(1)
+            val boxWidth = DEFAULT_IMAGE_WIDTH
+            val boxHeight = (boxWidth * operation.pageAspectRatio / imageAspectRatio)
+                .coerceIn(MINIMUM_IMAGE_SIZE, MAXIMUM_IMAGE_HEIGHT)
+            val image = repository.addImage(
+                noteId,
+                operation.pageId,
+                CanvasImageDraft(
+                    storageName = imported.storageName,
+                    originalWidth = imported.width,
+                    originalHeight = imported.height,
+                    orientationDegrees = imported.orientationDegrees,
+                    x = ((1f - boxWidth) / 2f).coerceAtLeast(0f),
+                    y = ((1f - boxHeight) / 2f).coerceAtLeast(0f),
+                    boxWidth = boxWidth,
+                    boxHeight = boxHeight,
+                ),
+            )
+            selectionState.value = CanvasSelection(images = listOf(image))
+            pushNewCommand(CanvasCommand.ElementsAdded(emptyList(), emptyList(), listOf(image)))
+            thumbnailService.request(operation.pageId)
+        } catch (error: Throwable) {
+            storageName?.let(canvasImageStore::delete)
+            throw error
+        }
+    }
+
     private suspend fun processTransformSelection(change: SelectionChange) {
-        repository.updateElements(noteId, change.after.strokes, change.after.texts)
+        repository.updateElements(
+            noteId, change.after.strokes, change.after.texts, change.after.images,
+        )
         pushNewCommand(CanvasCommand.ElementsTransformed(change.before, change.after))
         change.after.pageId()?.let(thumbnailService::request)
     }
 
     private suspend fun processDeleteSelection(selection: CanvasSelection) {
-        repository.deleteElements(noteId, selection.strokes, selection.texts)
+        repository.deleteElements(noteId, selection.strokes, selection.texts, selection.images)
         pushNewCommand(CanvasCommand.ElementsDeleted(selection))
         selection.pageId()?.let(thumbnailService::request)
     }
@@ -483,10 +542,12 @@ class CanvasViewModel(
         val maximumX = maxOf(
             source.strokes.flatMap { it.points }.maxOfOrNull { it.x } ?: 0f,
             source.texts.maxOfOrNull { it.x + it.boxWidth } ?: 0f,
+            source.images.maxOfOrNull { it.x + it.boxWidth } ?: 0f,
         )
         val maximumY = maxOf(
             source.strokes.flatMap { it.points }.maxOfOrNull { it.y } ?: 0f,
             source.texts.maxOfOrNull { it.y } ?: 0f,
+            source.images.maxOfOrNull { it.y + it.boxHeight } ?: 0f,
         )
         val safeOffsetX = offsetX.coerceAtMost((1f - maximumX).coerceAtLeast(0f))
         val safeOffsetY = offsetY.coerceAtMost((1f - maximumY).coerceAtLeast(0f))
@@ -508,10 +569,19 @@ class CanvasViewModel(
                     text.boxWidth, text.content, text.colorArgb, text.textSizeSp,
             )
         }
-        val (strokes, texts) = repository.copyElements(noteId, pageId, strokeDrafts, textDrafts)
-        val pasted = CanvasSelection(strokes, texts)
+        val imageDrafts = source.images.map { image ->
+            CanvasImageDraft(
+                image.storageName, image.originalWidth, image.originalHeight,
+                image.orientationDegrees, image.x + safeOffsetX, image.y + safeOffsetY,
+                image.boxWidth, image.boxHeight,
+            )
+        }
+        val copied = repository.copyElements(
+            noteId, pageId, strokeDrafts, textDrafts, imageDrafts,
+        )
+        val pasted = CanvasSelection(copied.strokes, copied.texts, copied.images)
         selectionState.value = pasted
-        pushNewCommand(CanvasCommand.ElementsAdded(strokes, texts))
+        pushNewCommand(CanvasCommand.ElementsAdded(copied.strokes, copied.texts, copied.images))
         thumbnailService.request(pageId)
     }
 
@@ -575,6 +645,7 @@ class CanvasViewModel(
             pdfPageRenderStore.evict(storageName)
             pdfDocumentStore.delete(storageName)
         }
+        deleted.imageStorageNames.forEach(canvasImageStore::delete)
         viewportState.update { it - pageId }
         clearPageSession()
         selectedPageId.value = nextPageId
@@ -593,6 +664,15 @@ class CanvasViewModel(
         suppressedStrokeIds.value = emptySet()
         selectionState.value = CanvasSelection()
         publishHistoryState()
+        persistenceScope.launch {
+            runCatching {
+                val clipboardImages = clipboardState.value.images
+                    .mapTo(linkedSetOf(), CanvasImage::storageName)
+                canvasImageStore.cleanupOrphans(
+                    repository.getReferencedImageStorageNames() + clipboardImages,
+                )
+            }
+        }
     }
 
     private suspend fun processUndo() {
@@ -616,7 +696,9 @@ class CanvasViewModel(
         selectionState.value = when (command) {
             is CanvasCommand.ElementsTransformed -> command.after
             is CanvasCommand.ElementsDeleted -> CanvasSelection()
-            is CanvasCommand.ElementsAdded -> CanvasSelection(command.strokes, command.texts)
+            is CanvasCommand.ElementsAdded -> CanvasSelection(
+                command.strokes, command.texts, command.images,
+            )
             else -> selectionState.value
         }
         redoStack.removeLast()
@@ -641,12 +723,15 @@ class CanvasViewModel(
                 repository.deleteStrokes(noteId, command.before)
                 repository.restoreStrokes(noteId, command.after)
             }
-            is CanvasCommand.ElementsAdded -> repository.restoreElements(noteId, command.strokes, command.texts)
+            is CanvasCommand.ElementsAdded -> repository.restoreElements(
+                noteId, command.strokes, command.texts, command.images,
+            )
             is CanvasCommand.ElementsDeleted -> repository.deleteElements(
                 noteId, command.selection.strokes, command.selection.texts,
+                command.selection.images,
             )
             is CanvasCommand.ElementsTransformed -> repository.updateElements(
-                noteId, command.after.strokes, command.after.texts,
+                noteId, command.after.strokes, command.after.texts, command.after.images,
             )
         }
     }
@@ -667,12 +752,15 @@ class CanvasViewModel(
                 repository.deleteStrokes(noteId, command.after)
                 repository.restoreStrokes(noteId, command.before)
             }
-            is CanvasCommand.ElementsAdded -> repository.deleteElements(noteId, command.strokes, command.texts)
+            is CanvasCommand.ElementsAdded -> repository.deleteElements(
+                noteId, command.strokes, command.texts, command.images,
+            )
             is CanvasCommand.ElementsDeleted -> repository.restoreElements(
                 noteId, command.selection.strokes, command.selection.texts,
+                command.selection.images,
             )
             is CanvasCommand.ElementsTransformed -> repository.updateElements(
-                noteId, command.before.strokes, command.before.texts,
+                noteId, command.before.strokes, command.before.texts, command.before.images,
             )
         }
     }
@@ -705,6 +793,7 @@ class CanvasViewModel(
                 }
             }
             is CanvasOperation.AddText -> Unit
+            is CanvasOperation.ImportImage -> Unit
             is CanvasOperation.TransformSelection -> selectionState.value = operation.change.before
             is CanvasOperation.DeleteSelection -> selectionState.value = operation.selection
             is CanvasOperation.PasteSelection -> selectionState.value = CanvasSelection()
@@ -780,12 +869,14 @@ class CanvasViewModel(
         is CanvasCommand.AddStroke -> stroke.pageId
         is CanvasCommand.DeleteStrokes -> strokes.firstOrNull()?.pageId
         is CanvasCommand.ReplaceStrokes -> before.firstOrNull()?.pageId ?: after.firstOrNull()?.pageId
-        is CanvasCommand.ElementsAdded -> strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId
+        is CanvasCommand.ElementsAdded -> strokes.firstOrNull()?.pageId
+            ?: texts.firstOrNull()?.pageId ?: images.firstOrNull()?.pageId
         is CanvasCommand.ElementsDeleted -> selection.pageId()
         is CanvasCommand.ElementsTransformed -> after.pageId()
     }
 
-    private fun CanvasSelection.pageId(): Long? = strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId
+    private fun CanvasSelection.pageId(): Long? = strokes.firstOrNull()?.pageId
+        ?: texts.firstOrNull()?.pageId ?: images.firstOrNull()?.pageId
 
     override fun onCleared() {
         operationQueue.close()
@@ -797,6 +888,11 @@ class CanvasViewModel(
         data class Erase(val targets: List<ErasableStroke>) : CanvasOperation
         data class AreaErase(val replacements: List<AreaEraseReplacement>) : CanvasOperation
         data class AddText(val draft: CanvasTextDraft, val pageId: Long) : CanvasOperation
+        data class ImportImage(
+            val uri: Uri,
+            val pageId: Long,
+            val pageAspectRatio: Float,
+        ) : CanvasOperation
         data class TransformSelection(val change: SelectionChange) : CanvasOperation
         data class DeleteSelection(val selection: CanvasSelection) : CanvasOperation
         data class PasteSelection(
@@ -824,7 +920,11 @@ class CanvasViewModel(
         data class AddStroke(val stroke: Stroke) : CanvasCommand
         data class DeleteStrokes(val strokes: List<Stroke>) : CanvasCommand
         data class ReplaceStrokes(val before: List<Stroke>, val after: List<Stroke>) : CanvasCommand
-        data class ElementsAdded(val strokes: List<Stroke>, val texts: List<CanvasText>) : CanvasCommand
+        data class ElementsAdded(
+            val strokes: List<Stroke>,
+            val texts: List<CanvasText>,
+            val images: List<CanvasImage>,
+        ) : CanvasCommand
         data class ElementsDeleted(val selection: CanvasSelection) : CanvasCommand
         data class ElementsTransformed(
             val before: CanvasSelection,
@@ -844,13 +944,21 @@ class CanvasViewModel(
         private val exportService: NoteExportService,
         private val pdfDocumentStore: PdfDocumentStore,
         private val pdfPageRenderStore: PdfPageRenderStore,
+        private val canvasImageStore: CanvasImageStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             CanvasViewModel(
                 noteId, repository, settingsStore, customColorPaletteStore,
                 thumbnailStore, thumbnailService, exportService,
-                pdfDocumentStore, pdfPageRenderStore,
+                pdfDocumentStore, pdfPageRenderStore, canvasImageStore,
             ) as T
+    }
+
+    private companion object {
+        const val DEFAULT_PAGE_ASPECT_RATIO = 16f / 9f
+        const val DEFAULT_IMAGE_WIDTH = 0.45f
+        const val MINIMUM_IMAGE_SIZE = 0.08f
+        const val MAXIMUM_IMAGE_HEIGHT = 0.65f
     }
 }

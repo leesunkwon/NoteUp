@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
+import com.kotlinsun.noteup.data.image.CanvasImageStore
 
 class TrashCleanupService(
     private val repository: NoteRepository,
@@ -17,6 +18,7 @@ class TrashCleanupService(
     private val thumbnailService: PageThumbnailService,
     private val pdfDocumentStore: PdfDocumentStore,
     private val pdfPageRenderStore: PdfPageRenderStore,
+    private val canvasImageStore: CanvasImageStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val running = AtomicBoolean(false)
@@ -48,6 +50,7 @@ class TrashCleanupService(
             pdfPageRenderStore.evict(storageName)
             pdfDocumentStore.delete(storageName)
         }
+        assets.imageStorageNames.forEach(canvasImageStore::delete)
     }
 
     private companion object {

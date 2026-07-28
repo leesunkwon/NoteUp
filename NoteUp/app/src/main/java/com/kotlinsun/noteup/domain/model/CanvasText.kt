@@ -26,6 +26,7 @@ data class CanvasTextDraft(
 sealed interface CanvasElementRef {
     data class StrokeRef(val stroke: Stroke) : CanvasElementRef
     data class TextRef(val text: CanvasText) : CanvasElementRef
+    data class ImageRef(val image: CanvasImage) : CanvasElementRef
 }
 
 data class CanvasTransform(val offsetX: Float, val offsetY: Float, val scale: Float = 1f)

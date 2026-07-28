@@ -8,6 +8,7 @@ import android.graphics.RectF
 import com.kotlinsun.noteup.domain.model.PageTemplate
 import com.kotlinsun.noteup.domain.model.Stroke
 import com.kotlinsun.noteup.domain.model.CanvasText
+import com.kotlinsun.noteup.domain.model.CanvasImage
 
 class PageRenderer(
     private val strokeRenderer: StrokeRenderer = StrokeRenderer(),
@@ -16,6 +17,11 @@ class PageRenderer(
     private val templatePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = DEFAULT_TEMPLATE_LINE_COLOR
         strokeWidth = 1f
+    }
+    private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val missingImagePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(236, 238, 241)
+        style = Paint.Style.FILL
     }
 
     fun draw(
@@ -27,6 +33,8 @@ class PageRenderer(
         strokes: List<Stroke>,
         texts: List<CanvasText> = emptyList(),
         pdfBackground: Bitmap? = null,
+        images: List<CanvasImage> = emptyList(),
+        imageBitmaps: Map<Long, Bitmap> = emptyMap(),
     ) {
         canvas.drawColor(Color.WHITE)
         val contentRect = if (pdfBackground == null) {
@@ -40,7 +48,8 @@ class PageRenderer(
         canvas.save()
         canvas.translate(contentRect.left, contentRect.top)
         val elements: List<Pair<Int, Any>> = strokes.map { it.strokeIndex to it as Any } +
-            texts.map { it.elementIndex to it as Any }
+            texts.map { it.elementIndex to it as Any } +
+            images.map { it.elementIndex to it as Any }
         elements.sortedBy { it.first }.forEach { (_, element) ->
             when (element) {
                 is Stroke -> {
@@ -53,10 +62,26 @@ class PageRenderer(
                 is CanvasText -> textRenderer.draw(
                     canvas, element, contentRect.width().toInt(), contentRect.height().toInt(), density,
                 )
+                is CanvasImage -> {
+                    val target = imageRect(element, contentRect.width(), contentRect.height())
+                    val bitmap = imageBitmaps[element.id]
+                    if (bitmap == null || bitmap.isRecycled) {
+                        canvas.drawRect(target, missingImagePaint)
+                    } else {
+                        canvas.drawBitmap(bitmap, null, target, imagePaint)
+                    }
+                }
             }
         }
         canvas.restore()
     }
+
+    fun imageRect(image: CanvasImage, width: Float, height: Float): RectF = RectF(
+        image.x * width,
+        image.y * height,
+        (image.x + image.boxWidth) * width,
+        (image.y + image.boxHeight) * height,
+    )
 
     fun fitCenterRect(width: Int, height: Int, bitmap: Bitmap): RectF {
         val scale = minOf(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
