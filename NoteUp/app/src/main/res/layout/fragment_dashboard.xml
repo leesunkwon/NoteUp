@@ -99,6 +99,10 @@
             app:icon="@drawable/ic_folder_add"
             app:iconGravity="textStart" />
 
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="10dp" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/open_settings_button"
             style="@style/Widget.NoteUp.Button.Secondary"

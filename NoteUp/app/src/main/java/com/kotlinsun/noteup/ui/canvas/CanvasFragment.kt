@@ -14,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupWindow
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.PopupMenu
@@ -83,6 +84,9 @@ class CanvasFragment : Fragment() {
     private var currentSettings = DrawingSettings()
     private var currentAppSettings = AppSettings()
     private var currentState: CanvasUiState = CanvasUiState.Loading
+    private var renderedHistoryControls: HistoryControlsRenderState? = null
+    private var renderedPageControls: PageControlsRenderState? = null
+    private var renderedSelectionActions: SelectionActionsRenderState? = null
     private var presentedArtifactPath: String? = null
     private var savingArtifact = false
     private var pagePanelOpen = false
@@ -306,7 +310,7 @@ class CanvasFragment : Fragment() {
         ).forEach { (button, labelRes) -> setToolbarButtonLabel(button, labelRes) }
         toolSettingsButton.contentDescription = getString(R.string.tool_settings)
         ViewCompat.setAccessibilityLiveRegion(
-            saveStatus,
+            exportStatus,
             ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE,
         )
         ViewCompat.setAccessibilityLiveRegion(
@@ -364,29 +368,22 @@ class CanvasFragment : Fragment() {
         loadingIndicator.isVisible = state == CanvasUiState.Loading
         notFoundState.isVisible = state == CanvasUiState.NotFound
         if (state is CanvasUiState.Ready) {
-            noteTitle.text = state.note.title
-            saveStatus.text = when {
-                state.isExporting -> getString(
+            noteTitle.setTextIfChanged(state.note.title)
+            exportStatus.isVisible = state.isExporting
+            exportStatus.setTextIfChanged(
+                if (state.isExporting) getString(
                     R.string.export_progress,
                     state.exportCompletedPages,
                     state.exportTotalPages,
-                )
-                state.isSaving -> getString(R.string.saving)
-                else -> getString(R.string.saved)
-            }
-            undoButton.isEnabled = state.canUndo
-            redoButton.isEnabled = state.canRedo
-            setAvailabilityState(undoButton, state.canUndo)
-            setAvailabilityState(redoButton, state.canRedo)
-            previousPageButton.isEnabled = !state.isBusy && state.pagePosition > 0
-            nextPageButton.isEnabled = !state.isBusy && state.pagePosition < state.pages.lastIndex
-            addPageButton.isEnabled = !state.isBusy
-            moreButton.isEnabled = !state.isBusy
-            pageIndicator.text = getString(
+                ) else null,
+            )
+            renderHistoryControls(state)
+            renderPageControls(state)
+            pageIndicator.setTextIfChanged(getString(
                 R.string.page_indicator,
                 state.pagePosition + 1,
                 state.pages.size,
-            )
+            ))
             renderCanvasAccessibility()
             pageAdapter.submitPages(state.pages, state.page.id, state.thumbnailRevisions)
             preloadAdjacentPages(state)
@@ -433,20 +430,15 @@ class CanvasFragment : Fragment() {
                 controlsEnabled = !state.isPageChanging && !state.isExporting,
             )
         } else {
-            noteTitle.text = getString(R.string.canvas_title)
-            saveStatus.text = null
-            undoButton.isEnabled = false
-            redoButton.isEnabled = false
-            setAvailabilityState(undoButton, false)
-            setAvailabilityState(redoButton, false)
-            previousPageButton.isEnabled = false
-            nextPageButton.isEnabled = false
-            addPageButton.isEnabled = false
-            moreButton.isEnabled = false
-            pageIndicator.text = null
+            noteTitle.setTextIfChanged(getString(R.string.canvas_title))
+            exportStatus.isVisible = false
+            exportStatus.setTextIfChanged(null)
+            renderHistoryControls(canUndo = false, canRedo = false)
+            renderPageControls(PageControlsRenderState())
+            pageIndicator.setTextIfChanged(null)
             renderZoomControls(MIN_ZOOM, controlsEnabled = false)
         }
-        renderToolbarState()
+        renderSelectionActionsState()
         updateInputEnabled()
     }
 
@@ -796,7 +788,8 @@ class CanvasFragment : Fragment() {
     private fun renderSettings(settings: DrawingSettings) = with(binding) {
         currentSettings = settings
         drawingCanvas.drawingSettings = settings
-        renderToolbarState()
+        renderToolSettingsState()
+        renderSelectionActionsState()
         updateInputEnabled()
     }
 
@@ -808,27 +801,22 @@ class CanvasFragment : Fragment() {
         drawingCanvas.canvasInputMode = settings.canvasInputMode
     }
 
-    private fun renderToolbarState() = with(binding) {
+    private fun renderToolSettingsState() = with(binding) {
         val settings = currentSettings
-        penToolButton.isChecked = settings.tool == DrawingTool.PEN
-        highlighterToolButton.isChecked = settings.tool == DrawingTool.HIGHLIGHTER
-        eraserToolButton.isChecked = settings.tool == DrawingTool.ERASER
-        lassoToolButton.isChecked = settings.tool == DrawingTool.LASSO
-        shapeToolButton.isChecked = settings.tool in SHAPE_TOOLS
-        textToolButton.isChecked = settings.tool == DrawingTool.TEXT
-        listOf(
-            penToolButton,
-            highlighterToolButton,
-            eraserToolButton,
-            lassoToolButton,
-            shapeToolButton,
-            textToolButton,
-        ).forEach { setSelectionState(it, it.isChecked) }
+        setToolChecked(penToolButton, settings.tool == DrawingTool.PEN)
+        setToolChecked(highlighterToolButton, settings.tool == DrawingTool.HIGHLIGHTER)
+        setToolChecked(eraserToolButton, settings.tool == DrawingTool.ERASER)
+        setToolChecked(lassoToolButton, settings.tool == DrawingTool.LASSO)
+        setToolChecked(shapeToolButton, settings.tool in SHAPE_TOOLS)
+        setToolChecked(textToolButton, settings.tool == DrawingTool.TEXT)
         renderShapeToolButton(settings.tool)
         toolSettingsButton.isVisible = settings.tool in TOOL_SETTINGS_TOOLS
         renderCurrentToolStyle(settings)
         toolSettingsBinding?.let { renderToolSettingsPanel(it, settings) }
+    }
 
+    private fun renderSelectionActionsState() = with(binding) {
+        val settings = currentSettings
         val state = currentState as? CanvasUiState.Ready
         val isLasso = settings.tool == DrawingTool.LASSO
         val hasSelection = state?.hasSelection == true
@@ -838,15 +826,60 @@ class CanvasFragment : Fragment() {
         val hasSingleTextSelection = settings.tool == DrawingTool.TEXT &&
             selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty()
         val showSelectionActions = (isLasso && hasSelection) || hasSingleTextSelection
-        copySelectionButton.isVisible = showSelectionActions
-        deleteSelectionButton.isVisible = showSelectionActions
-        pasteSelectionButton.isVisible = isLasso && canPaste
-        editTextButton.isVisible = (isLasso || settings.tool == DrawingTool.TEXT) &&
-            selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty()
+        val renderState = SelectionActionsRenderState(
+            showCopy = showSelectionActions,
+            showPaste = isLasso && canPaste,
+            showDelete = showSelectionActions,
+            showEdit = (isLasso || settings.tool == DrawingTool.TEXT) &&
+                selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty(),
+            enabled = !isBusy,
+        )
+        if (renderedSelectionActions == renderState) return@with
+        renderedSelectionActions = renderState
+        copySelectionButton.isVisible = renderState.showCopy
+        deleteSelectionButton.isVisible = renderState.showDelete
+        pasteSelectionButton.isVisible = renderState.showPaste
+        editTextButton.isVisible = renderState.showEdit
         listOf(copySelectionButton, pasteSelectionButton, deleteSelectionButton, editTextButton)
-            .forEach { it.isEnabled = !isBusy }
-        selectionActionsBar.isVisible = showSelectionActions || (isLasso && canPaste)
+            .forEach { it.setEnabledIfChanged(renderState.enabled) }
+        selectionActionsBar.isVisible = renderState.isVisible
         if (selectionActionsBar.isVisible) positionSelectionActions()
+    }
+
+    private fun renderHistoryControls(state: CanvasUiState.Ready) {
+        val isTransientSave = state.isSaving && !state.isPageChanging && !state.isExporting
+        if (!isTransientSave) renderHistoryControls(state.canUndo, state.canRedo)
+    }
+
+    private fun renderHistoryControls(canUndo: Boolean, canRedo: Boolean) = with(binding) {
+        val renderState = HistoryControlsRenderState(canUndo, canRedo)
+        if (renderedHistoryControls == renderState) return@with
+        renderedHistoryControls = renderState
+        undoButton.setEnabledIfChanged(canUndo)
+        redoButton.setEnabledIfChanged(canRedo)
+        setAvailabilityState(undoButton, canUndo)
+        setAvailabilityState(redoButton, canRedo)
+    }
+
+    private fun renderPageControls(state: CanvasUiState.Ready) {
+        val controlsLocked = state.isPageChanging || state.isExporting
+        renderPageControls(
+            PageControlsRenderState(
+                canGoPrevious = !controlsLocked && state.pagePosition > 0,
+                canGoNext = !controlsLocked && state.pagePosition < state.pages.lastIndex,
+                canAddPage = !controlsLocked,
+                canOpenMore = !controlsLocked,
+            ),
+        )
+    }
+
+    private fun renderPageControls(renderState: PageControlsRenderState) = with(binding) {
+        if (renderedPageControls == renderState) return@with
+        renderedPageControls = renderState
+        previousPageButton.setEnabledIfChanged(renderState.canGoPrevious)
+        nextPageButton.setEnabledIfChanged(renderState.canGoNext)
+        addPageButton.setEnabledIfChanged(renderState.canAddPage)
+        moreButton.setEnabledIfChanged(renderState.canOpenMore)
     }
 
     private fun renderCurrentToolStyle(settings: DrawingSettings) = with(binding) {
@@ -1224,24 +1257,37 @@ class CanvasFragment : Fragment() {
         }
     }
 
+    private fun setToolChecked(button: MaterialButton, selected: Boolean) {
+        if (button.isChecked != selected) button.isChecked = selected
+        setSelectionState(button, selected)
+    }
+
     private fun setSelectionState(view: View, selected: Boolean) {
-        ViewCompat.setStateDescription(
-            view,
-            getString(
-                if (selected) R.string.accessibility_selected
-                else R.string.accessibility_not_selected,
-            ),
+        val description = getString(
+            if (selected) R.string.accessibility_selected
+            else R.string.accessibility_not_selected,
         )
+        if (ViewCompat.getStateDescription(view) != description) {
+            ViewCompat.setStateDescription(view, description)
+        }
     }
 
     private fun setAvailabilityState(view: View, available: Boolean) {
-        ViewCompat.setStateDescription(
-            view,
-            getString(
-                if (available) R.string.accessibility_available
-                else R.string.accessibility_unavailable,
-            ),
+        val description = getString(
+            if (available) R.string.accessibility_available
+            else R.string.accessibility_unavailable,
         )
+        if (ViewCompat.getStateDescription(view) != description) {
+            ViewCompat.setStateDescription(view, description)
+        }
+    }
+
+    private fun View.setEnabledIfChanged(value: Boolean) {
+        if (isEnabled != value) isEnabled = value
+    }
+
+    private fun TextView.setTextIfChanged(value: CharSequence?) {
+        if (!android.text.TextUtils.equals(text, value)) text = value
     }
 
     private fun renderCanvasAccessibility() {
@@ -1668,8 +1714,34 @@ class CanvasFragment : Fragment() {
         renderedTexts = emptyList()
         renderedImages = emptyList()
         renderedPageId = null
+        renderedHistoryControls = null
+        renderedPageControls = null
+        renderedSelectionActions = null
         _binding = null
         super.onDestroyView()
+    }
+
+    private data class HistoryControlsRenderState(
+        val canUndo: Boolean,
+        val canRedo: Boolean,
+    )
+
+    private data class PageControlsRenderState(
+        val canGoPrevious: Boolean = false,
+        val canGoNext: Boolean = false,
+        val canAddPage: Boolean = false,
+        val canOpenMore: Boolean = false,
+    )
+
+    private data class SelectionActionsRenderState(
+        val showCopy: Boolean,
+        val showPaste: Boolean,
+        val showDelete: Boolean,
+        val showEdit: Boolean,
+        val enabled: Boolean,
+    ) {
+        val isVisible: Boolean
+            get() = showCopy || showPaste || showDelete || showEdit
     }
 
     private companion object {
