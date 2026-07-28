@@ -171,13 +171,13 @@
             app:icon="@drawable/ic_more_vert" />
 
         <TextView
-            android:id="@+id/save_status"
+            android:id="@+id/export_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="end|center_vertical"
-            android:minWidth="@dimen/save_status_width"
-            android:text="@string/saved"
-            android:textColor="@color/noteup_fg_neutral_muted" />
+            android:minWidth="@dimen/export_status_width"
+            android:textColor="@color/noteup_fg_neutral_muted"
+            android:visibility="gone" />
     </LinearLayout>
 
     <com.kotlinsun.noteup.ui.canvas.DrawingCanvasView

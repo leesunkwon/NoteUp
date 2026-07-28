@@ -310,7 +310,7 @@ class CanvasFragment : Fragment() {
         ).forEach { (button, labelRes) -> setToolbarButtonLabel(button, labelRes) }
         toolSettingsButton.contentDescription = getString(R.string.tool_settings)
         ViewCompat.setAccessibilityLiveRegion(
-            saveStatus,
+            exportStatus,
             ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE,
         )
         ViewCompat.setAccessibilityLiveRegion(
@@ -369,15 +369,14 @@ class CanvasFragment : Fragment() {
         notFoundState.isVisible = state == CanvasUiState.NotFound
         if (state is CanvasUiState.Ready) {
             noteTitle.setTextIfChanged(state.note.title)
-            saveStatus.setTextIfChanged(when {
-                state.isExporting -> getString(
+            exportStatus.isVisible = state.isExporting
+            exportStatus.setTextIfChanged(
+                if (state.isExporting) getString(
                     R.string.export_progress,
                     state.exportCompletedPages,
                     state.exportTotalPages,
-                )
-                state.isSaving -> getString(R.string.saving)
-                else -> getString(R.string.saved)
-            })
+                ) else null,
+            )
             renderHistoryControls(state)
             renderPageControls(state)
             pageIndicator.setTextIfChanged(getString(
@@ -432,7 +431,8 @@ class CanvasFragment : Fragment() {
             )
         } else {
             noteTitle.setTextIfChanged(getString(R.string.canvas_title))
-            saveStatus.setTextIfChanged(null)
+            exportStatus.isVisible = false
+            exportStatus.setTextIfChanged(null)
             renderHistoryControls(canUndo = false, canRedo = false)
             renderPageControls(PageControlsRenderState())
             pageIndicator.setTextIfChanged(null)

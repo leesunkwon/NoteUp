@@ -73,7 +73,7 @@
     <dimen name="page_thumbnail_item_width">228dp</dimen>
     <dimen name="page_panel_portrait_height">280dp</dimen>
     <dimen name="pen_selected_stroke_width">3dp</dimen>
-    <dimen name="save_status_width">72dp</dimen>
+    <dimen name="export_status_width">96dp</dimen>
     <dimen name="tool_popup_width">312dp</dimen>
     <dimen name="tool_popup_corner_radius">16dp</dimen>
     <dimen name="tool_popup_elevation">8dp</dimen>
