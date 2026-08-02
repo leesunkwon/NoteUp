@@ -42,6 +42,8 @@
     <string name="canvas_not_found_title">노트를 열 수 없습니다</string>
     <string name="canvas_not_found_description">노트 또는 페이지가 삭제되었는지 확인해 주세요.</string>
     <string name="pen_tool">펜</string>
+    <string name="pointer_tool">둘러보기</string>
+    <string name="pointer_tool_description">드래그하여 문서를 이동하고 좌우 스와이프로 페이지를 넘깁니다. 마우스 휠로 확대하거나 축소할 수 있습니다.</string>
     <string name="pen_color_black">검정색 펜</string>
     <string name="pen_color_blue">파란색 펜</string>
     <string name="pen_color_red">빨간색 펜</string>
@@ -252,5 +254,5 @@
     <string name="recovery_available_message">이전에 저장을 마치지 못한 필기 %1$d개를 복구할까요?</string>
     <string name="recovery_complete">필기 %1$d개를 복구했습니다.</string>
     <string name="discard">버리기</string>
-    <string name="keyboard_shortcuts_description">Ctrl 또는 Command + Z: 실행 취소\nCtrl 또는 Command + Shift + Z, Ctrl 또는 Command + Y: 다시 실행\n1~5: 펜, 형광펜, 지우개, 올가미, 텍스트\n[ / ]: 이전·다음 페이지\n- / 0 / +: 축소·초기화·확대\nDelete 또는 Backspace: 선택 요소 삭제\nEsc: 진행 중인 작업과 선택 취소</string>
+    <string name="keyboard_shortcuts_description">Ctrl 또는 Command + Z: 실행 취소\nCtrl 또는 Command + Shift + Z, Ctrl 또는 Command + Y: 다시 실행\nP: 둘러보기 도구\n1~5: 펜, 형광펜, 지우개, 올가미, 텍스트\n[ / ]: 이전·다음 페이지\n- / 0 / +: 축소·초기화·확대\nDelete 또는 Backspace: 선택 요소 삭제\nEsc: 진행 중인 작업과 선택 취소</string>
 </resources>

@@ -52,6 +52,13 @@
                 android:orientation="horizontal">
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pointer_tool_button"
+                    style="@style/Widget.NoteUp.Button.IconTool"
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    app:icon="@drawable/ic_tool_pointer" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/pen_tool_button"
                     style="@style/Widget.NoteUp.Button.IconTool"
                     android:layout_width="@dimen/control_height"
