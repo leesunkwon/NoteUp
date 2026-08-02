@@ -217,6 +217,7 @@ class CanvasFragment : Fragment() {
         configureToolbarAccessibility()
         TooltipCompat.setTooltipText(zoomOutButton, getString(R.string.zoom_out))
         TooltipCompat.setTooltipText(zoomInButton, getString(R.string.zoom_in))
+        pointerToolButton.setOnClickListener { selectDrawingTool(DrawingTool.POINTER) }
         penToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.PEN) }
         highlighterToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.HIGHLIGHTER) }
         eraserToolButton.setOnClickListener { handleToolButtonClick(DrawingTool.ERASER) }
@@ -296,6 +297,7 @@ class CanvasFragment : Fragment() {
     private fun configureToolbarAccessibility() = with(binding) {
         listOf(
             backButton to R.string.back,
+            pointerToolButton to R.string.pointer_tool,
             penToolButton to R.string.pen_tool,
             highlighterToolButton to R.string.highlighter_tool,
             eraserToolButton to R.string.eraser_tool,
@@ -314,6 +316,10 @@ class CanvasFragment : Fragment() {
             zoomResetButton to R.string.zoom_reset,
             zoomInButton to R.string.zoom_in,
         ).forEach { (button, labelRes) -> setToolbarButtonLabel(button, labelRes) }
+        TooltipCompat.setTooltipText(
+            pointerToolButton,
+            getString(R.string.pointer_tool_description),
+        )
         toolSettingsButton.contentDescription = getString(R.string.tool_settings)
         ViewCompat.setAccessibilityLiveRegion(
             exportStatus,
@@ -682,7 +688,12 @@ class CanvasFragment : Fragment() {
         if (commandModifier || event.isAltPressed) return false
 
         val canEdit = state != null && !state.isBusy && !state.isExporting && !pdfPageLoading
+        val canNavigate = state != null && !state.isPageChanging && !state.isExporting && !pdfPageLoading
         return when (event.keyCode) {
+            KeyEvent.KEYCODE_P -> {
+                if (canNavigate) selectDrawingTool(DrawingTool.POINTER)
+                true
+            }
             KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_NUMPAD_1 -> {
                 if (canEdit) selectDrawingTool(DrawingTool.PEN)
                 true
@@ -855,6 +866,7 @@ class CanvasFragment : Fragment() {
 
     private fun renderToolSettingsState() = with(binding) {
         val settings = currentSettings
+        setToolChecked(pointerToolButton, settings.tool == DrawingTool.POINTER)
         setToolChecked(penToolButton, settings.tool == DrawingTool.PEN)
         setToolChecked(highlighterToolButton, settings.tool == DrawingTool.HIGHLIGHTER)
         setToolChecked(eraserToolButton, settings.tool == DrawingTool.ERASER)
@@ -1284,6 +1296,7 @@ class CanvasFragment : Fragment() {
     }
 
     private fun toolSettingsTitleResource(tool: DrawingTool): Int = when (tool) {
+        DrawingTool.POINTER -> R.string.pointer_tool
         DrawingTool.PEN -> R.string.pen_settings
         DrawingTool.HIGHLIGHTER -> R.string.highlighter_settings
         DrawingTool.ERASER -> R.string.eraser_settings

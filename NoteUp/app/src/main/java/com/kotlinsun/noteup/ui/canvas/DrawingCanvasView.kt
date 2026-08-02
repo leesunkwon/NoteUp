@@ -8,7 +8,9 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.PorterDuff
 import android.util.AttributeSet
+import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.PointerIcon
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
@@ -79,7 +81,17 @@ class DrawingCanvasView @JvmOverloads constructor(
                 cancelTextInput(restorePreview = true)
                 lastTextTapId = null
             }
+            if (field.tool != value.tool &&
+                (field.tool == DrawingTool.POINTER || value.tool == DrawingTool.POINTER)
+            ) {
+                cancelActiveStroke()
+                resetNavigationDrag()
+                resetPageSwipe()
+                isTouchGestureActive = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
             field = value
+            updateNavigationPointerIcon(dragging = false)
         }
 
     private val renderer = StrokeRenderer()
@@ -128,6 +140,12 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var lastGestureFocusX = 0f
     private var lastGestureFocusY = 0f
     private var isTouchGestureActive = false
+    private var navigationPointerId = MotionEvent.INVALID_POINTER_ID
+    private var navigationDownX = 0f
+    private var navigationDownY = 0f
+    private var navigationLastX = 0f
+    private var navigationLastY = 0f
+    private var navigationDragging = false
     private var pageSwipePointerId = MotionEvent.INVALID_POINTER_ID
     private var pageSwipeStartX = 0f
     private var pageSwipeStartY = 0f
@@ -266,20 +284,10 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     fun adjustZoom(delta: Float) {
         if (width <= 0 || height <= 0) return
-        val oldScale = viewport.scale
-        val newScale = (oldScale + delta).coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
-        if (newScale == oldScale) return
-        val ratio = newScale / oldScale
-        val focusX = width / 2f
-        val focusY = height / 2f
-        updateViewport(
-            CanvasViewport(
-                scale = newScale,
-                offsetX = focusX - (focusX - viewport.offsetX) * ratio,
-                offsetY = focusY - (focusY - viewport.offsetY) * ratio,
-                referenceWidth = width,
-                referenceHeight = height,
-            ),
+        zoomAt(
+            (viewport.scale + delta).coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE),
+            width / 2f,
+            height / 2f,
         )
     }
 
@@ -390,7 +398,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         areaPreview.filter { it.target is ErasableStroke.Pending }
             .flatMap(AreaEraseReplacement::fragments).forEach { drawStroke(canvas, it) }
         if (activePoints.isNotEmpty() && activeSettings.tool !in setOf(
-                DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
+                DrawingTool.POINTER, DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
             )
         ) {
             drawStroke(canvas, activeDraft(activePoints))
@@ -406,6 +414,9 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isInputEnabled) return false
+        if (drawingSettings.tool == DrawingTool.POINTER) {
+            return handleNavigationToolEvent(event)
+        }
         if (suppressStylusUntilUp) {
             if (event.actionMasked == MotionEvent.ACTION_UP ||
                 event.actionMasked == MotionEvent.ACTION_POINTER_UP ||
@@ -465,6 +476,33 @@ class DrawingCanvasView @JvmOverloads constructor(
             }
             else -> activePointerId != MotionEvent.INVALID_POINTER_ID
         }
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (isInputEnabled && drawingSettings.tool == DrawingTool.POINTER &&
+            event.actionMasked == MotionEvent.ACTION_SCROLL &&
+            event.isFromSource(InputDevice.SOURCE_CLASS_POINTER)
+        ) {
+            val wheelDelta = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+            if (wheelDelta != 0f) {
+                zoomAt(
+                    (viewport.scale + wheelDelta * MOUSE_WHEEL_ZOOM_STEP)
+                        .coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE),
+                    event.x,
+                    event.y,
+                )
+                return true
+            }
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        if (drawingSettings.tool == DrawingTool.POINTER) {
+            updateNavigationPointerIcon(dragging = navigationDragging)
+            return true
+        }
+        return super.onHoverEvent(event)
     }
 
     private fun startInput(event: MotionEvent): Boolean {
@@ -874,6 +912,96 @@ class DrawingCanvasView @JvmOverloads constructor(
         return true
     }
 
+    private fun handleNavigationToolEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN ||
+            isTouchGestureActive || event.pointerCount >= 2
+        ) {
+            resetNavigationDrag(releaseParent = false)
+            return handleTouchGesture(event, dispatchScaleEvent = false)
+        }
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> startNavigationDrag(event)
+            MotionEvent.ACTION_MOVE -> continueNavigationDrag(event)
+            MotionEvent.ACTION_UP -> finishNavigationDrag(event)
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (event.getPointerId(event.actionIndex) == navigationPointerId) {
+                    finishNavigationDrag(event)
+                } else true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                resetNavigationDrag()
+                true
+            }
+            else -> navigationPointerId != MotionEvent.INVALID_POINTER_ID
+        }
+    }
+
+    private fun startNavigationDrag(event: MotionEvent): Boolean {
+        if (width <= 0 || height <= 0) return false
+        val actionIndex = event.actionIndex
+        val toolType = event.getToolType(actionIndex)
+        if (toolType == MotionEvent.TOOL_TYPE_MOUSE &&
+            event.buttonState != 0 && event.buttonState and MotionEvent.BUTTON_PRIMARY == 0
+        ) return false
+        navigationPointerId = event.getPointerId(actionIndex)
+        navigationDownX = event.getX(actionIndex)
+        navigationDownY = event.getY(actionIndex)
+        navigationLastX = navigationDownX
+        navigationLastY = navigationDownY
+        navigationDragging = false
+        resetPageSwipe()
+        parent?.requestDisallowInterceptTouchEvent(true)
+        updateNavigationPointerIcon(dragging = true)
+        return true
+    }
+
+    private fun continueNavigationDrag(event: MotionEvent): Boolean {
+        val pointerIndex = event.findPointerIndex(navigationPointerId)
+        if (pointerIndex < 0) return false
+        val x = event.getX(pointerIndex)
+        val y = event.getY(pointerIndex)
+        if (!navigationDragging) {
+            val dx = x - navigationDownX
+            val dy = y - navigationDownY
+            if (dx * dx + dy * dy < touchSlop * touchSlop) return true
+            navigationDragging = true
+        }
+        updateViewport(
+            viewport.copy(
+                offsetX = viewport.offsetX + x - navigationLastX,
+                offsetY = viewport.offsetY + y - navigationLastY,
+            ),
+        )
+        navigationLastX = x
+        navigationLastY = y
+        updateNavigationPointerIcon(dragging = true)
+        return true
+    }
+
+    private fun finishNavigationDrag(event: MotionEvent): Boolean {
+        if (navigationPointerId == MotionEvent.INVALID_POINTER_ID) return false
+        if (event.actionMasked == MotionEvent.ACTION_UP) continueNavigationDrag(event)
+        resetNavigationDrag()
+        return true
+    }
+
+    private fun resetNavigationDrag(releaseParent: Boolean = true) {
+        navigationPointerId = MotionEvent.INVALID_POINTER_ID
+        navigationDragging = false
+        if (releaseParent) parent?.requestDisallowInterceptTouchEvent(false)
+        updateNavigationPointerIcon(dragging = false)
+    }
+
+    private fun updateNavigationPointerIcon(dragging: Boolean) {
+        pointerIcon = if (drawingSettings.tool == DrawingTool.POINTER) {
+            PointerIcon.getSystemIcon(
+                context,
+                if (dragging) PointerIcon.TYPE_GRABBING else PointerIcon.TYPE_GRAB,
+            )
+        } else null
+    }
+
     private fun isHorizontalPageSwipe(
         startX: Float,
         startY: Float,
@@ -905,6 +1033,22 @@ class DrawingCanvasView @JvmOverloads constructor(
         viewport = clampViewport(value)
         onViewportChanged?.invoke(viewport)
         invalidate()
+    }
+
+    private fun zoomAt(newScale: Float, focusX: Float, focusY: Float) {
+        val oldScale = viewport.scale
+        val scale = newScale.coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
+        if (scale == oldScale) return
+        val ratio = scale / oldScale
+        updateViewport(
+            CanvasViewport(
+                scale = scale,
+                offsetX = focusX - (focusX - viewport.offsetX) * ratio,
+                offsetY = focusY - (focusY - viewport.offsetY) * ratio,
+                referenceWidth = width,
+                referenceHeight = height,
+            ),
+        )
     }
 
     private fun clampViewport(value: CanvasViewport): CanvasViewport {
@@ -1563,6 +1707,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val ERASER_RADIUS_DP = 12f
         const val MINIMUM_SCALE = 1f
         const val MAXIMUM_SCALE = 4f
+        const val MOUSE_WHEEL_ZOOM_STEP = 0.15f
         const val HANDLE_RADIUS_DP = 10f
         const val PAGE_SWIPE_SLOP_MULTIPLIER = 4
         const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
@@ -1578,16 +1723,10 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            val oldScale = viewport.scale
-            val newScale = (oldScale * detector.scaleFactor).coerceIn(MINIMUM_SCALE, MAXIMUM_SCALE)
-            if (newScale == oldScale) return true
-            val ratio = newScale / oldScale
-            updateViewport(
-                CanvasViewport(
-                    scale = newScale,
-                    offsetX = detector.focusX - (detector.focusX - viewport.offsetX) * ratio,
-                    offsetY = detector.focusY - (detector.focusY - viewport.offsetY) * ratio,
-                ),
+            zoomAt(
+                viewport.scale * detector.scaleFactor,
+                detector.focusX,
+                detector.focusY,
             )
             return true
         }

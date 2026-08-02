@@ -31,6 +31,7 @@ fun opaqueColor(argb: Int): Int = argb or 0xFF000000.toInt()
 fun highlighterColor(rgb: Int): Int = (rgb and 0x00FFFFFF) or 0x66000000
 
 enum class DrawingTool {
+    POINTER,
     PEN,
     HIGHLIGHTER,
     ERASER,
