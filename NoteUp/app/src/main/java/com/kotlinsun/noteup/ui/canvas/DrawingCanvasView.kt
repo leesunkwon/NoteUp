@@ -146,6 +146,9 @@ class DrawingCanvasView @JvmOverloads constructor(
     private var navigationLastX = 0f
     private var navigationLastY = 0f
     private var navigationDragging = false
+    private var navigationInputToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+    private var navigationStartScale = MINIMUM_SCALE
+    private var navigationStartOffsetX = 0f
     private var pageSwipePointerId = MotionEvent.INVALID_POINTER_ID
     private var pageSwipeStartX = 0f
     private var pageSwipeStartY = 0f
@@ -950,6 +953,9 @@ class DrawingCanvasView @JvmOverloads constructor(
         navigationLastX = navigationDownX
         navigationLastY = navigationDownY
         navigationDragging = false
+        navigationInputToolType = toolType
+        navigationStartScale = viewport.scale
+        navigationStartOffsetX = viewport.offsetX
         resetPageSwipe()
         parent?.requestDisallowInterceptTouchEvent(true)
         updateNavigationPointerIcon(dragging = true)
@@ -981,14 +987,38 @@ class DrawingCanvasView @JvmOverloads constructor(
 
     private fun finishNavigationDrag(event: MotionEvent): Boolean {
         if (navigationPointerId == MotionEvent.INVALID_POINTER_ID) return false
+        val pointerIndex = event.findPointerIndex(navigationPointerId)
         if (event.actionMasked == MotionEvent.ACTION_UP) continueNavigationDrag(event)
+        val endX = pointerIndex.takeIf { it >= 0 }?.let { event.getX(it) } ?: navigationLastX
+        val endY = pointerIndex.takeIf { it >= 0 }?.let { event.getY(it) } ?: navigationLastY
+        val startX = navigationDownX
+        val shouldChangePage = shouldDispatchNavigationPageSwipe(endX, endY)
         resetNavigationDrag()
+        if (shouldChangePage) dispatchPageSwipe(startX, endX)
         return true
+    }
+
+    private fun shouldDispatchNavigationPageSwipe(endX: Float, endY: Float): Boolean {
+        if (!isPageSwipeEnabled || navigationInputToolType != MotionEvent.TOOL_TYPE_FINGER) {
+            return false
+        }
+        if (!isHorizontalPageSwipe(navigationDownX, navigationDownY, endX, endY)) return false
+        if (navigationStartScale <= MINIMUM_SCALE + VIEWPORT_SCALE_EPSILON) return true
+        val dx = endX - navigationDownX
+        val minimumOffsetX = width * (1f - navigationStartScale)
+        return if (dx < 0f) {
+            navigationStartOffsetX <= minimumOffsetX + VIEWPORT_EDGE_EPSILON
+        } else {
+            navigationStartOffsetX >= -VIEWPORT_EDGE_EPSILON
+        }
     }
 
     private fun resetNavigationDrag(releaseParent: Boolean = true) {
         navigationPointerId = MotionEvent.INVALID_POINTER_ID
         navigationDragging = false
+        navigationInputToolType = MotionEvent.TOOL_TYPE_UNKNOWN
+        navigationStartScale = MINIMUM_SCALE
+        navigationStartOffsetX = 0f
         if (releaseParent) parent?.requestDisallowInterceptTouchEvent(false)
         updateNavigationPointerIcon(dragging = false)
     }
@@ -1708,6 +1738,8 @@ class DrawingCanvasView @JvmOverloads constructor(
         const val MINIMUM_SCALE = 1f
         const val MAXIMUM_SCALE = 4f
         const val MOUSE_WHEEL_ZOOM_STEP = 0.15f
+        const val VIEWPORT_EDGE_EPSILON = 1f
+        const val VIEWPORT_SCALE_EPSILON = 0.001f
         const val HANDLE_RADIUS_DP = 10f
         const val PAGE_SWIPE_SLOP_MULTIPLIER = 4
         const val PAGE_SWIPE_WIDTH_RATIO = 0.14f
