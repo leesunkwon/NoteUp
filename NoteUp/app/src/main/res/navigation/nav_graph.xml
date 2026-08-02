@@ -13,7 +13,7 @@
             app:destination="@id/canvasFragment" />
         <action
             android:id="@+id/action_dashboard_to_settings"
-            app:destination="@id/settingsFragment" />
+            app:destination="@id/settingsGraph" />
     </fragment>
 
     <fragment
@@ -25,8 +25,54 @@
             app:argType="long" />
     </fragment>
 
-    <fragment
-        android:id="@+id/settingsFragment"
-        android:name="com.kotlinsun.noteup.ui.settings.SettingsFragment"
-        android:label="@string/settings_title" />
+    <navigation
+        android:id="@+id/settingsGraph"
+        app:startDestination="@id/settingsFragment">
+
+        <fragment
+            android:id="@+id/settingsFragment"
+            android:name="com.kotlinsun.noteup.ui.settings.SettingsFragment"
+            android:label="@string/settings_title">
+            <action
+                android:id="@+id/action_settings_to_display"
+                app:destination="@id/displaySettingsFragment" />
+            <action
+                android:id="@+id/action_settings_to_writing"
+                app:destination="@id/writingSettingsFragment" />
+            <action
+                android:id="@+id/action_settings_to_ai"
+                app:destination="@id/aiSettingsFragment" />
+            <action
+                android:id="@+id/action_settings_to_storage"
+                app:destination="@id/storageSettingsFragment" />
+            <action
+                android:id="@+id/action_settings_to_about"
+                app:destination="@id/aboutSettingsFragment" />
+        </fragment>
+
+        <fragment
+            android:id="@+id/displaySettingsFragment"
+            android:name="com.kotlinsun.noteup.ui.settings.DisplaySettingsFragment"
+            android:label="@string/settings_category_display" />
+
+        <fragment
+            android:id="@+id/writingSettingsFragment"
+            android:name="com.kotlinsun.noteup.ui.settings.WritingSettingsFragment"
+            android:label="@string/settings_category_writing" />
+
+        <fragment
+            android:id="@+id/aiSettingsFragment"
+            android:name="com.kotlinsun.noteup.ui.settings.AiSettingsFragment"
+            android:label="@string/settings_category_ai" />
+
+        <fragment
+            android:id="@+id/storageSettingsFragment"
+            android:name="com.kotlinsun.noteup.ui.settings.StorageSettingsFragment"
+            android:label="@string/settings_category_storage" />
+
+        <fragment
+            android:id="@+id/aboutSettingsFragment"
+            android:name="com.kotlinsun.noteup.ui.settings.AboutSettingsFragment"
+            android:label="@string/settings_category_about" />
+    </navigation>
 </navigation>
