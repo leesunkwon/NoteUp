@@ -19,6 +19,10 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
     }
 
     buildTypes {
@@ -56,6 +60,8 @@ dependencies {
     implementation libs.androidx.lifecycle.runtime.ktx
     implementation libs.androidx.recyclerview
     implementation libs.androidx.drawerlayout
+    implementation libs.androidx.work.runtime.ktx
+    implementation libs.litertlm.android
     implementation libs.material
     testImplementation libs.junit
     androidTestImplementation libs.androidx.espresso.core
