@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupWindow
 import android.widget.TextView
+import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.PopupMenu
@@ -60,6 +61,7 @@ import com.kotlinsun.noteup.domain.model.HighlighterColor
 import com.kotlinsun.noteup.domain.model.HighlighterThickness
 import com.kotlinsun.noteup.domain.model.Page
 import com.kotlinsun.noteup.domain.model.PageTemplate
+import com.kotlinsun.noteup.domain.model.PageVersion
 import com.kotlinsun.noteup.domain.model.PenColor
 import com.kotlinsun.noteup.domain.model.PenThickness
 import com.kotlinsun.noteup.domain.model.Stroke
@@ -67,6 +69,8 @@ import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.domain.model.opaqueColor
 import com.kotlinsun.noteup.ui.common.applyCriticalPositiveAction
 import java.util.Locale
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -153,6 +157,8 @@ class CanvasFragment : Fragment() {
             container.pdfDocumentStore,
             container.pdfPageRenderStore,
             container.canvasImageStore,
+            container.recoveryJournal,
+            container.pageVersionService,
         )
     }
 
@@ -576,6 +582,8 @@ class CanvasFragment : Fragment() {
                 state != null && !state.isBusy
             menu.add(0, MORE_EXPORT_ID, 1, R.string.export).isEnabled = state != null && !state.isBusy
             menu.add(0, MORE_SHORTCUTS_ID, 2, R.string.keyboard_shortcuts)
+            menu.add(0, MORE_VERSION_HISTORY_ID, 3, R.string.version_history).isEnabled =
+                state != null && !state.isBusy
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MORE_INSERT_IMAGE_ID -> {
@@ -594,10 +602,54 @@ class CanvasFragment : Fragment() {
                         showKeyboardShortcutsDialog()
                         true
                     }
+                    MORE_VERSION_HISTORY_ID -> {
+                        showVersionHistoryDialog()
+                        true
+                    }
                     else -> false
                 }
             }
             show()
+        }
+    }
+
+    private fun showVersionHistoryDialog() {
+        val versions = viewModel.pageVersions.value
+        if (versions.isEmpty()) {
+            Snackbar.make(binding.root, R.string.version_history_empty, Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+        val labels = versions.map { version ->
+            getString(
+                R.string.version_history_item,
+                formatter.format(Date(version.createdAt)),
+                version.elementCount,
+            )
+        }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.version_history)
+            .setItems(labels.toTypedArray()) { _, index -> showVersionPreview(versions[index]) }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    private fun showVersionPreview(version: PageVersion) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val bitmap = viewModel.loadVersionPreview(version)
+            val preview = ImageView(requireContext()).apply {
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(24, 24, 24, 24)
+                setImageBitmap(bitmap)
+                contentDescription = getString(R.string.version_preview)
+            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.version_preview)
+                .setView(preview)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.restore) { _, _ -> viewModel.restoreVersion(version.id) }
+                .show()
         }
     }
 
@@ -1441,6 +1493,15 @@ class CanvasFragment : Fragment() {
             binding.drawingCanvas.setImages(images, emptyMap())
             renderCanvasImages(images, state?.viewport?.scale ?: MIN_ZOOM, force = true)
         }
+        CanvasEvent.SaveDelayed -> Snackbar.make(
+            binding.root, R.string.save_queue_delayed, Snackbar.LENGTH_SHORT,
+        ).show()
+        CanvasEvent.RecoveryJournalPreserved -> Snackbar.make(
+            binding.root, R.string.save_failed_recovery_preserved, Snackbar.LENGTH_LONG,
+        ).show()
+        CanvasEvent.VersionRestored -> Snackbar.make(
+            binding.root, R.string.version_restored, Snackbar.LENGTH_SHORT,
+        ).show()
     }
 
     private fun updateInputEnabled() {
@@ -1762,6 +1823,7 @@ class CanvasFragment : Fragment() {
         const val MORE_EXPORT_ID = 10
         const val MORE_SHORTCUTS_ID = 11
         const val MORE_INSERT_IMAGE_ID = 12
+        const val MORE_VERSION_HISTORY_ID = 13
         const val IMAGE_RENDER_BUCKET = 512
         const val MAX_IMAGE_RENDER_EDGE = 4096
         const val PRELOAD_EDGE = 1024

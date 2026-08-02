@@ -193,6 +193,15 @@
     <string name="settings_section_writing">필기</string>
     <string name="settings_section_behavior">동작</string>
     <string name="settings_section_storage">저장소</string>
+    <string name="version_history_settings_title">자동 버전 기록</string>
+    <string name="version_history_limit_title">페이지별 보관 개수</string>
+    <string name="version_history_limit_option">최근 %1$d개</string>
+    <string name="version_history_limit_summary">페이지당 최근 %1$d개 보관</string>
+    <string name="version_history_disabled">사용 안 함</string>
+    <string name="storage_usage_title">저장 공간 및 캐시 정리</string>
+    <string name="storage_usage_summary">사용 중 %1$s · 정리 가능 %2$s · 여유 %3$s</string>
+    <string name="clear_cache_description">누르면 썸네일과 내보내기 임시 파일을 정리합니다. 노트와 복구 데이터는 유지됩니다.</string>
+    <string name="cache_cleared">다시 만들 수 있는 캐시를 정리했습니다.</string>
     <string name="settings_section_app">앱 정보</string>
     <string name="theme_mode_title">앱 테마</string>
     <string name="theme_mode_system">시스템 설정</string>
@@ -232,5 +241,16 @@
     <string name="accessibility_canvas">필기 캔버스, %1$d / %2$d페이지, 확대 %3$d%%</string>
     <string name="accessibility_setting_value">%1$s, %2$s</string>
     <string name="keyboard_shortcuts">키보드 단축키</string>
+    <string name="version_history">버전 기록</string>
+    <string name="version_history_empty">아직 저장된 이전 버전이 없습니다.</string>
+    <string name="version_history_item">%1$s · 요소 %2$d개</string>
+    <string name="version_preview">이전 버전 미리보기</string>
+    <string name="version_restored">선택한 버전으로 복원했습니다.</string>
+    <string name="save_queue_delayed">저장 작업이 지연되고 있습니다. 필기는 안전하게 대기 중입니다.</string>
+    <string name="save_failed_recovery_preserved">저장하지 못한 필기를 복구 데이터로 보관했습니다.</string>
+    <string name="recovery_available_title">복구할 필기가 있습니다</string>
+    <string name="recovery_available_message">이전에 저장을 마치지 못한 필기 %1$d개를 복구할까요?</string>
+    <string name="recovery_complete">필기 %1$d개를 복구했습니다.</string>
+    <string name="discard">버리기</string>
     <string name="keyboard_shortcuts_description">Ctrl 또는 Command + Z: 실행 취소\nCtrl 또는 Command + Shift + Z, Ctrl 또는 Command + Y: 다시 실행\n1~5: 펜, 형광펜, 지우개, 올가미, 텍스트\n[ / ]: 이전·다음 페이지\n- / 0 / +: 축소·초기화·확대\nDelete 또는 Backspace: 선택 요소 삭제\nEsc: 진행 중인 작업과 선택 취소</string>
 </resources>

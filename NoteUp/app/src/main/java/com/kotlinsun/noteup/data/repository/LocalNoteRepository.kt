@@ -11,6 +11,8 @@ import com.kotlinsun.noteup.data.local.entity.CanvasTextEntity
 import com.kotlinsun.noteup.data.local.entity.CanvasImageEntity
 import com.kotlinsun.noteup.data.local.entity.ImportedPdfEntity
 import com.kotlinsun.noteup.data.local.entity.PdfPageBackgroundEntity
+import com.kotlinsun.noteup.data.local.entity.PageVersionEntity
+import com.kotlinsun.noteup.data.local.entity.AppliedRecoveryOperationEntity
 import com.kotlinsun.noteup.data.local.dao.PageWithBackgroundRow
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
@@ -27,6 +29,9 @@ import com.kotlinsun.noteup.domain.model.StrokeTool
 import com.kotlinsun.noteup.domain.model.DeletedAssets
 import com.kotlinsun.noteup.domain.model.PdfImportPage
 import com.kotlinsun.noteup.domain.model.PdfPageBackground
+import com.kotlinsun.noteup.domain.model.PageVersion
+import com.kotlinsun.noteup.domain.model.PageVersionReason
+import com.kotlinsun.noteup.domain.model.PageSnapshot
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -43,6 +48,8 @@ class LocalNoteRepository(
     private val canvasImageDao = database.canvasImageDao()
     private val importedPdfDao = database.importedPdfDao()
     private val pdfPageBackgroundDao = database.pdfPageBackgroundDao()
+    private val pageVersionDao = database.pageVersionDao()
+    private val recoveryOperationDao = database.recoveryOperationDao()
 
     override fun observeNotebooks(): Flow<List<Notebook>> =
         notebookDao.observeAll().map { notebooks -> notebooks.map { it.toDomain() } }
@@ -81,6 +88,9 @@ class LocalNoteRepository(
 
     override fun observeImages(pageId: Long): Flow<List<CanvasImage>> =
         canvasImageDao.observeByPage(pageId).map { values -> values.map { it.toDomain() } }
+
+    override fun observePageVersions(pageId: Long): Flow<List<PageVersion>> =
+        pageVersionDao.observeByPage(pageId).map { values -> values.map { it.toDomain() } }
 
     override suspend fun createNotebook(name: String): Long {
         val now = System.currentTimeMillis()
@@ -227,12 +237,17 @@ class LocalNoteRepository(
                     updatedAt = now,
                 ),
             )
-            noteDao.touch(noteId, now)
+            touchPageAndNote(noteId, pageId, now)
             pageId
         }
 
     override suspend fun updatePageTemplate(pageId: Long, template: PageTemplate) {
-        pageDao.updateTemplate(pageId, template.name, System.currentTimeMillis())
+        database.withTransaction {
+            val page = requireNotNull(pageDao.getById(pageId))
+            val now = System.currentTimeMillis()
+            pageDao.updateTemplate(pageId, template.name, now)
+            noteDao.touch(page.page.noteId, now)
+        }
     }
 
     override suspend fun deletePage(noteId: Long, pageId: Long): DeletedAssets = database.withTransaction {
@@ -288,6 +303,89 @@ class LocalNoteRepository(
     override suspend fun getImages(pageId: Long): List<CanvasImage> =
         canvasImageDao.getByPage(pageId).map { it.toDomain() }
 
+    override suspend fun getPageVersion(versionId: Long): PageVersion? =
+        pageVersionDao.getById(versionId)?.toDomain()
+
+    override suspend fun getPageVersions(pageId: Long): List<PageVersion> =
+        pageVersionDao.getByPage(pageId).map { it.toDomain() }
+
+    override suspend fun getAllPageVersions(): List<PageVersion> =
+        pageVersionDao.getAll().map { it.toDomain() }
+
+    override suspend fun addPageVersion(
+        pageId: Long,
+        createdAt: Long,
+        reason: PageVersionReason,
+        snapshotName: String,
+        previewName: String,
+        elementCount: Int,
+    ): PageVersion {
+        val entity = PageVersionEntity(
+            pageId = pageId,
+            createdAt = createdAt,
+            reason = reason.name,
+            snapshotName = snapshotName,
+            previewName = previewName,
+            elementCount = elementCount,
+        )
+        return entity.copy(id = pageVersionDao.insert(entity)).toDomain()
+    }
+
+    override suspend fun deletePageVersions(ids: List<Long>) {
+        if (ids.isNotEmpty()) pageVersionDao.deleteByIds(ids)
+    }
+
+    override suspend fun replacePageContent(noteId: Long, snapshot: PageSnapshot) {
+        database.withTransaction {
+            val page = requireNotNull(pageDao.getById(snapshot.pageId))
+            require(page.page.noteId == noteId)
+            strokeDao.deleteByPage(snapshot.pageId)
+            canvasTextDao.deleteByPage(snapshot.pageId)
+            canvasImageDao.deleteByPage(snapshot.pageId)
+            val now = System.currentTimeMillis()
+            pageDao.updateTemplate(snapshot.pageId, snapshot.template.name, now)
+            if (snapshot.strokes.isNotEmpty()) {
+                strokeDao.insertAll(snapshot.strokes.map { it.copy(id = 0, pageId = snapshot.pageId).toEntity() })
+            }
+            if (snapshot.texts.isNotEmpty()) {
+                canvasTextDao.insertAll(snapshot.texts.map { it.copy(id = 0, pageId = snapshot.pageId).toEntity() })
+            }
+            if (snapshot.images.isNotEmpty()) {
+                canvasImageDao.insertAll(snapshot.images.map { it.copy(id = 0, pageId = snapshot.pageId).toEntity() })
+            }
+            touchPageAndNote(noteId, snapshot.pageId, now)
+        }
+    }
+
+    override suspend fun applyRecoveredStroke(
+        operationId: String,
+        noteId: Long,
+        pageId: Long,
+        stroke: StrokeDraft,
+    ): Boolean = database.withTransaction {
+        if (recoveryOperationDao.isApplied(operationId)) return@withTransaction false
+        val page = requireNotNull(pageDao.getById(pageId))
+        require(page.page.noteId == noteId)
+        val now = System.currentTimeMillis()
+        val entity = StrokeEntity(
+            pageId = pageId,
+            strokeIndex = nextElementIndex(pageId),
+            toolType = stroke.tool.name,
+            colorArgb = stroke.colorArgb,
+            strokeWidth = stroke.width,
+            points = StrokePointCodec.encode(stroke.points),
+            createdAt = now,
+        )
+        strokeDao.insert(entity)
+        recoveryOperationDao.markApplied(AppliedRecoveryOperationEntity(operationId, now))
+        touchPageAndNote(noteId, pageId, now)
+        true
+    }
+
+    override suspend fun pruneAppliedRecoveryOperations(cutoff: Long) {
+        recoveryOperationDao.deleteOlderThan(cutoff)
+    }
+
     override suspend fun saveStroke(
         noteId: Long,
         pageId: Long,
@@ -306,7 +404,7 @@ class LocalNoteRepository(
             createdAt = now,
         )
         val strokeId = strokeDao.insert(entity)
-        noteDao.touch(noteId, now)
+        touchPageAndNote(noteId, pageId, now)
         entity.copy(id = strokeId).toDomainOrNull()
             ?: error("Saved stroke could not be decoded")
     }
@@ -333,7 +431,39 @@ class LocalNoteRepository(
                 )
                 entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
                     ?: error("Saved stroke could not be decoded")
-            }.also { noteDao.touch(noteId, now) }
+            }.also { touchPageAndNote(noteId, pageId, now) }
+        }
+    }
+
+    override suspend fun saveStrokesWithRecoveryIds(
+        noteId: Long,
+        pageId: Long,
+        strokes: List<Pair<String, StrokeDraft>>,
+    ): List<Stroke> {
+        if (strokes.isEmpty()) return emptyList()
+        return database.withTransaction {
+            var nextIndex = nextElementIndex(pageId)
+            val now = System.currentTimeMillis()
+            strokes.map { (operationId, stroke) ->
+                require(stroke.points.size >= 2)
+                val entity = StrokeEntity(
+                    pageId = pageId,
+                    strokeIndex = nextIndex++,
+                    toolType = stroke.tool.name,
+                    colorArgb = stroke.colorArgb,
+                    strokeWidth = stroke.width,
+                    points = StrokePointCodec.encode(stroke.points),
+                    createdAt = now,
+                )
+                val saved = entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
+                    ?: error("Saved stroke could not be decoded")
+                check(
+                    recoveryOperationDao.markApplied(
+                        AppliedRecoveryOperationEntity(operationId, now),
+                    ) != -1L,
+                ) { "Recovery operation was already applied" }
+                saved
+            }.also { touchPageAndNote(noteId, pageId, now) }
         }
     }
 
@@ -341,7 +471,7 @@ class LocalNoteRepository(
         if (strokes.isEmpty()) return
         database.withTransaction {
             strokeDao.deleteByIds(strokes.map(Stroke::id).distinct())
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.first().pageId)
         }
     }
 
@@ -352,7 +482,7 @@ class LocalNoteRepository(
                 strokes.distinctBy(Stroke::id).map { it.toEntity() },
             )
             check(restoredIds.none { it == -1L }) { "A stroke could not be restored" }
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.first().pageId)
         }
     }
 
@@ -382,7 +512,7 @@ class LocalNoteRepository(
                 entity.copy(id = strokeDao.insert(entity)).toDomainOrNull()
                     ?: error("Replacement stroke could not be decoded")
             }
-            noteDao.touch(noteId, now)
+            touchPageAndNote(noteId, pageId, now)
             inserted
         }
     }
@@ -390,7 +520,7 @@ class LocalNoteRepository(
     override suspend fun clearStrokes(noteId: Long, pageId: Long) {
         database.withTransaction {
             strokeDao.deleteByPage(pageId)
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, pageId)
         }
     }
 
@@ -413,7 +543,7 @@ class LocalNoteRepository(
             updatedAt = now,
         )
         val saved = entity.copy(id = canvasTextDao.insert(entity)).toDomain()
-        noteDao.touch(noteId, now)
+        touchPageAndNote(noteId, pageId, now)
         saved
     }
 
@@ -438,7 +568,7 @@ class LocalNoteRepository(
             updatedAt = now,
         )
         val saved = entity.copy(id = canvasImageDao.insert(entity)).toDomain()
-        noteDao.touch(noteId, now)
+        touchPageAndNote(noteId, pageId, now)
         saved
     }
 
@@ -446,7 +576,7 @@ class LocalNoteRepository(
         if (strokes.isEmpty()) return
         database.withTransaction {
             strokeDao.updateAll(strokes.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.first().pageId)
         }
     }
 
@@ -454,7 +584,7 @@ class LocalNoteRepository(
         if (texts.isEmpty()) return
         database.withTransaction {
             canvasTextDao.updateAll(texts.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, texts.first().pageId)
         }
     }
 
@@ -462,7 +592,7 @@ class LocalNoteRepository(
         if (texts.isEmpty()) return
         database.withTransaction {
             canvasTextDao.deleteByIds(texts.map(CanvasText::id))
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, texts.first().pageId)
         }
     }
 
@@ -470,7 +600,7 @@ class LocalNoteRepository(
         if (texts.isEmpty()) return
         database.withTransaction {
             canvasTextDao.insertAll(texts.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, texts.first().pageId)
         }
     }
 
@@ -483,7 +613,7 @@ class LocalNoteRepository(
         database.withTransaction {
             if (strokes.isNotEmpty()) strokeDao.updateAll(strokes.map { it.toEntity() })
             if (texts.isNotEmpty()) canvasTextDao.updateAll(texts.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.firstOrNull()?.pageId ?: texts.first().pageId)
         }
     }
 
@@ -496,7 +626,7 @@ class LocalNoteRepository(
         database.withTransaction {
             if (strokes.isNotEmpty()) strokeDao.deleteByIds(strokes.map(Stroke::id))
             if (texts.isNotEmpty()) canvasTextDao.deleteByIds(texts.map(CanvasText::id))
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.firstOrNull()?.pageId ?: texts.first().pageId)
         }
     }
 
@@ -511,7 +641,7 @@ class LocalNoteRepository(
                 check(strokeDao.insertAll(strokes.map { it.toEntity() }).none { it == -1L })
             }
             if (texts.isNotEmpty()) canvasTextDao.insertAll(texts.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.firstOrNull()?.pageId ?: texts.first().pageId)
         }
     }
 
@@ -551,7 +681,7 @@ class LocalNoteRepository(
             )
             entity.copy(id = canvasTextDao.insert(entity)).toDomain()
         }
-        noteDao.touch(noteId, now)
+        touchPageAndNote(noteId, pageId, now)
         savedStrokes to savedTexts
     }
 
@@ -566,7 +696,7 @@ class LocalNoteRepository(
             if (strokes.isNotEmpty()) strokeDao.updateAll(strokes.map { it.toEntity() })
             if (texts.isNotEmpty()) canvasTextDao.updateAll(texts.map { it.toEntity() })
             if (images.isNotEmpty()) canvasImageDao.updateAll(images.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId ?: images.first().pageId)
         }
     }
 
@@ -581,7 +711,7 @@ class LocalNoteRepository(
             if (strokes.isNotEmpty()) strokeDao.deleteByIds(strokes.map(Stroke::id))
             if (texts.isNotEmpty()) canvasTextDao.deleteByIds(texts.map(CanvasText::id))
             if (images.isNotEmpty()) canvasImageDao.deleteByIds(images.map(CanvasImage::id))
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId ?: images.first().pageId)
         }
     }
 
@@ -598,7 +728,7 @@ class LocalNoteRepository(
             }
             if (texts.isNotEmpty()) canvasTextDao.insertAll(texts.map { it.toEntity() })
             if (images.isNotEmpty()) canvasImageDao.insertAll(images.map { it.toEntity() })
-            noteDao.touch(noteId, System.currentTimeMillis())
+            touchPageAndNote(noteId, strokes.firstOrNull()?.pageId ?: texts.firstOrNull()?.pageId ?: images.first().pageId)
         }
     }
 
@@ -654,7 +784,7 @@ class LocalNoteRepository(
                 updatedAt = now,
             ).let { it.copy(id = canvasImageDao.insert(it)).toDomain() }
         }
-        noteDao.touch(noteId, now)
+        touchPageAndNote(noteId, pageId, now)
         CopiedCanvasElements(savedStrokes, savedTexts, savedImages)
     }
 
@@ -664,6 +794,15 @@ class LocalNoteRepository(
             canvasTextDao.maximumIndex(pageId),
             canvasImageDao.maximumIndex(pageId),
         ) + 1
+
+    private suspend fun touchPageAndNote(
+        noteId: Long,
+        pageId: Long,
+        updatedAt: Long = System.currentTimeMillis(),
+    ) {
+        pageDao.touch(pageId, updatedAt)
+        noteDao.touch(noteId, updatedAt)
+    }
 
     private fun NotebookEntity.toDomain() = Notebook(
         id = id,
@@ -740,5 +879,16 @@ class LocalNoteRepository(
     private fun CanvasImage.toEntity() = CanvasImageEntity(
         id, pageId, elementIndex, storageName, originalWidth, originalHeight,
         orientationDegrees, x, y, boxWidth, boxHeight, createdAt, updatedAt,
+    )
+
+    private fun PageVersionEntity.toDomain() = PageVersion(
+        id = id,
+        pageId = pageId,
+        createdAt = createdAt,
+        reason = runCatching { PageVersionReason.valueOf(reason) }
+            .getOrDefault(PageVersionReason.AUTOMATIC),
+        snapshotName = snapshotName,
+        previewName = previewName,
+        elementCount = elementCount,
     )
 }

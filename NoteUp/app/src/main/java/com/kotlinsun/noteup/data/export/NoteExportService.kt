@@ -31,6 +31,12 @@ class NoteExportService(
     private val applicationContext = context.applicationContext
     private val directory = File(applicationContext.cacheDir, DIRECTORY_NAME)
 
+    fun cacheSizeBytes(): Long = directory.listFiles().orEmpty().sumOf(File::length)
+
+    suspend fun clearCache() = withContext(Dispatchers.IO) {
+        directory.listFiles().orEmpty().forEach(File::delete)
+    }
+
     suspend fun exportPage(
         note: Note,
         pageId: Long,

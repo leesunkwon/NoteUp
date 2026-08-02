@@ -37,4 +37,7 @@ interface CanvasImageDao {
 
     @Query("DELETE FROM canvas_images WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
+
+    @Query("DELETE FROM canvas_images WHERE pageId = :pageId")
+    suspend fun deleteByPage(pageId: Long)
 }

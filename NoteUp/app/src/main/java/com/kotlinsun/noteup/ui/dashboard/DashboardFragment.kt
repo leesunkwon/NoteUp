@@ -86,9 +86,33 @@ class DashboardFragment : Fragment() {
         val onboardingStore = (requireActivity().application as NoteUpApplication)
             .container.onboardingPreferencesStore
         val handlingExternalPdf = requireActivity().intent?.type == "application/pdf"
-        if (savedInstanceState == null && onboardingStore.shouldShow() && !handlingExternalPdf) {
-            binding.root.post {
-                if (isAdded) GettingStartedDialogFragment.show(childFragmentManager)
+        if (savedInstanceState == null && !handlingExternalPdf) {
+            viewLifecycleOwner.lifecycleScope.launch {
+                val container = (requireActivity().application as NoteUpApplication).container
+                val recovery = container.recoveryService.inspect()
+                if (recovery != null) {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.recovery_available_title)
+                        .setMessage(getString(R.string.recovery_available_message, recovery.entryCount))
+                        .setNegativeButton(R.string.discard) { _, _ ->
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                container.recoveryService.discardAll()
+                            }
+                        }
+                        .setPositiveButton(R.string.restore) { _, _ ->
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                val result = container.recoveryService.recoverAll()
+                                Snackbar.make(
+                                    binding.root,
+                                    getString(R.string.recovery_complete, result.recovered),
+                                    Snackbar.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                        .show()
+                } else if (onboardingStore.shouldShow()) {
+                    GettingStartedDialogFragment.show(childFragmentManager)
+                }
             }
         }
     }

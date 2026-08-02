@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.StatFs
 import android.util.LruCache
 import com.kotlinsun.noteup.domain.model.ImportedCanvasImage
 import java.io.File
@@ -29,6 +30,9 @@ class CanvasImageStore(context: Context) {
         val destination = file(storageName)
         val temporary = File(directory, "$storageName.tmp")
         runCatching {
+            require(StatFs(directory.parentFile?.path ?: directory.path).availableBytes >= MINIMUM_FREE_BYTES) {
+                "Insufficient storage"
+            }
             val resolver = applicationContext.contentResolver
             val mimeType = resolver.getType(uri)
             require(mimeType == null || mimeType.startsWith("image/"))
@@ -41,12 +45,22 @@ class CanvasImageStore(context: Context) {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(temporary.path, options)
             require(options.outWidth > 0 && options.outHeight > 0) { "Unsupported image" }
-            check(temporary.renameTo(destination))
+            val orientation = readOrientation(temporary)
+            val resized = resizeLargeImage(
+                temporary,
+                options.outWidth,
+                options.outHeight,
+                orientation,
+            )
+            if (!temporary.renameTo(destination)) {
+                temporary.copyTo(destination, overwrite = true)
+                temporary.delete()
+            }
             ImportedCanvasImage(
                 storageName = storageName,
-                width = options.outWidth,
-                height = options.outHeight,
-                orientationDegrees = readOrientation(destination),
+                width = resized.width,
+                height = resized.height,
+                orientationDegrees = resized.orientation,
             )
         }.getOrElse { error ->
             temporary.delete()
@@ -93,6 +107,60 @@ class CanvasImageStore(context: Context) {
     }
 
     fun file(storageName: String): File = File(directory, storageName)
+
+    fun clearMemory() = synchronized(cache) { cache.evictAll() }
+
+    fun sizeBytes(): Long = directory.listFiles().orEmpty().sumOf(File::length)
+
+    private fun resizeLargeImage(
+        source: File,
+        width: Int,
+        height: Int,
+        orientation: Int,
+    ): ImageMetadata {
+        if (max(width, height) <= MAX_IMPORTED_EDGE) return ImageMetadata(width, height, orientation)
+        var sampleSize = 1
+        while (max(width, height) / (sampleSize * 2) >= MAX_IMPORTED_EDGE) sampleSize *= 2
+        val decoded = BitmapFactory.decodeFile(
+            source.path,
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            },
+        ) ?: error("Unable to resize image")
+        val scale = (MAX_IMPORTED_EDGE.toFloat() / max(decoded.width, decoded.height)).coerceAtMost(1f)
+        val matrix = Matrix().apply {
+            postScale(scale, scale)
+            postRotate(orientation.toFloat())
+        }
+        val transformed = Bitmap.createBitmap(
+            decoded, 0, 0, decoded.width, decoded.height, matrix, true,
+        )
+        val resultWidth = transformed.width
+        val resultHeight = transformed.height
+        val resizedFile = File(source.parentFile, "${source.name}.resized")
+        try {
+            FileOutputStream(resizedFile).use { output ->
+                @Suppress("DEPRECATION")
+                check(transformed.compress(Bitmap.CompressFormat.WEBP, IMPORT_QUALITY, output))
+                output.fd.sync()
+            }
+            source.delete()
+            if (!resizedFile.renameTo(source)) {
+                resizedFile.copyTo(source, overwrite = true)
+                resizedFile.delete()
+            }
+        } finally {
+            if (transformed !== decoded) {
+                transformed.recycle()
+                decoded.recycle()
+            } else {
+                decoded.recycle()
+            }
+            resizedFile.delete()
+        }
+        return ImageMetadata(resultWidth, resultHeight, 0)
+    }
 
     private fun decodeWithFallback(
         source: File,
@@ -159,5 +227,10 @@ class CanvasImageStore(context: Context) {
         const val MIN_CACHE_BYTES = 16 * 1024 * 1024
         const val MAX_CACHE_BYTES = 64 * 1024 * 1024
         const val MAXIMUM_DECODE_ATTEMPTS = 3
+        const val MAX_IMPORTED_EDGE = 4096
+        const val IMPORT_QUALITY = 92
+        const val MINIMUM_FREE_BYTES = 32L * 1024 * 1024
     }
+
+    private data class ImageMetadata(val width: Int, val height: Int, val orientation: Int)
 }

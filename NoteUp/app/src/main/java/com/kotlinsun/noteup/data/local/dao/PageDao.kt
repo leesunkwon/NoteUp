@@ -73,4 +73,7 @@ interface PageDao {
     @Query("UPDATE pages SET pageIndex = :pageIndex, updatedAt = :updatedAt WHERE id = :pageId")
     suspend fun updateIndex(pageId: Long, pageIndex: Int, updatedAt: Long)
 
+    @Query("UPDATE pages SET updatedAt = :updatedAt WHERE id = :pageId")
+    suspend fun touch(pageId: Long, updatedAt: Long)
+
 }
