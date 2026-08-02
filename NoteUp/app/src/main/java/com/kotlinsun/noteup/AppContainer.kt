@@ -19,6 +19,12 @@ import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfImportService
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 import com.kotlinsun.noteup.data.image.CanvasImageStore
+import com.kotlinsun.noteup.data.preferences.VersionHistoryStore
+import com.kotlinsun.noteup.data.recovery.RecoveryJournal
+import com.kotlinsun.noteup.data.recovery.RecoveryService
+import com.kotlinsun.noteup.data.version.PageSnapshotStore
+import com.kotlinsun.noteup.data.version.PageVersionService
+import com.kotlinsun.noteup.data.storage.StorageUsageService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +44,7 @@ class AppContainer(
         DatabaseMigrations.MIGRATION_3_4,
         DatabaseMigrations.MIGRATION_4_5,
         DatabaseMigrations.MIGRATION_5_6,
+        DatabaseMigrations.MIGRATION_6_7,
     ).build()
 
     val noteRepository: NoteRepository = LocalNoteRepository(database)
@@ -49,8 +56,30 @@ class AppContainer(
     val pageThumbnailService = PageThumbnailService(
         noteRepository, pageThumbnailStore, pdfPageRenderStore, canvasImageStore,
     )
+    val versionHistoryStore = VersionHistoryStore(context)
+    val pageSnapshotStore = PageSnapshotStore(context)
+    val pageVersionService = PageVersionService(
+        noteRepository,
+        pageSnapshotStore,
+        pageThumbnailStore,
+        pageThumbnailService,
+        versionHistoryStore,
+    )
+    val recoveryJournal = RecoveryJournal(context)
+    val recoveryService = RecoveryService(
+        noteRepository, recoveryJournal, pageThumbnailService, pageVersionService,
+    )
     val noteExportService = NoteExportService(
         context, noteRepository, pdfPageRenderStore, canvasImageStore,
+    )
+    val storageUsageService = StorageUsageService(
+        context,
+        pageThumbnailStore,
+        noteExportService,
+        pdfPageRenderStore,
+        canvasImageStore,
+        recoveryJournal,
+        pageVersionService,
     )
     val trashRetentionStore = TrashRetentionStore(context)
     val trashCleanupService = TrashCleanupService(
@@ -63,8 +92,22 @@ class AppContainer(
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            pageVersionService.cleanupOrphans()
             pdfDocumentStore.cleanupOrphans(noteRepository.getReferencedPdfStorageNames())
-            canvasImageStore.cleanupOrphans(noteRepository.getReferencedImageStorageNames())
+            canvasImageStore.cleanupOrphans(
+                noteRepository.getReferencedImageStorageNames() +
+                    pageVersionService.referencedImageStorageNames(),
+            )
+            recoveryJournal.cleanupExpired(System.currentTimeMillis() - RECOVERY_RETENTION_MILLIS)
+            noteRepository.pruneAppliedRecoveryOperations(
+                System.currentTimeMillis() - RECOVERY_RETENTION_MILLIS,
+            )
         }
     }
+
+    private companion object {
+        const val RECOVERY_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000
+    }
+
+    fun trimMemory() = storageUsageService.trimMemory()
 }

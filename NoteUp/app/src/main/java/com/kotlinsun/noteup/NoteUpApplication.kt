@@ -13,6 +13,11 @@ class NoteUpApplication : Application() {
         super.onCreate()
         AppCompatDelegate.setDefaultNightMode(appSettingsStore.current().themeMode.nightMode())
     }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) container.trimMemory()
+    }
 }
 
 fun ThemeMode.nightMode(): Int = when (this) {

@@ -94,4 +94,45 @@ object DatabaseMigrations {
             )
         }
     }
+
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `page_versions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `pageId` INTEGER NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `reason` TEXT NOT NULL,
+                    `snapshotName` TEXT NOT NULL,
+                    `previewName` TEXT NOT NULL,
+                    `elementCount` INTEGER NOT NULL,
+                    FOREIGN KEY(`pageId`) REFERENCES `pages`(`id`)
+                        ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_page_versions_pageId_createdAt` " +
+                    "ON `page_versions` (`pageId`, `createdAt`)",
+            )
+            database.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_page_versions_snapshotName` " +
+                    "ON `page_versions` (`snapshotName`)",
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `applied_recovery_operations` (
+                    `operationId` TEXT NOT NULL,
+                    `appliedAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`operationId`)
+                )
+                """.trimIndent(),
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_applied_recovery_operations_appliedAt` " +
+                    "ON `applied_recovery_operations` (`appliedAt`)",
+            )
+        }
+    }
 }

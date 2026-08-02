@@ -233,6 +233,81 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/version_history_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="horizontal"
+                android:padding="@dimen/spacing_medium">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/version_history_settings_title"
+                        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                    <TextView
+                        android:id="@+id/version_history_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_extra_small"
+                        android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+                        tools:text="페이지당 최근 20개 보관" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/version_history_switch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/version_history_settings_title" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/clear_cache_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_medium">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/storage_usage_title"
+                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                <TextView
+                    android:id="@+id/storage_usage_summary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+                    tools:text="사용 중 12 MB · 정리 가능 3 MB" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:text="@string/clear_cache_description"
+                    android:textAppearance="@style/TextAppearance.NoteUp.CaptionSmall" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/reset_settings_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

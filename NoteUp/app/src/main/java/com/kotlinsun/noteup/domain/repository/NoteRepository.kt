@@ -13,6 +13,9 @@ import com.kotlinsun.noteup.domain.model.CanvasImageDraft
 import com.kotlinsun.noteup.domain.model.CopiedCanvasElements
 import com.kotlinsun.noteup.domain.model.DeletedAssets
 import com.kotlinsun.noteup.domain.model.PdfImportPage
+import com.kotlinsun.noteup.domain.model.PageVersion
+import com.kotlinsun.noteup.domain.model.PageVersionReason
+import com.kotlinsun.noteup.domain.model.PageSnapshot
 import kotlinx.coroutines.flow.Flow
 
 interface NoteRepository {
@@ -28,6 +31,7 @@ interface NoteRepository {
     fun observeStrokes(pageId: Long): Flow<List<Stroke>>
     fun observeTexts(pageId: Long): Flow<List<CanvasText>>
     fun observeImages(pageId: Long): Flow<List<CanvasImage>>
+    fun observePageVersions(pageId: Long): Flow<List<PageVersion>>
     suspend fun createNotebook(name: String): Long
     suspend fun renameNotebook(notebookId: Long, name: String)
     suspend fun deleteNotebook(notebookId: Long)
@@ -59,8 +63,33 @@ interface NoteRepository {
     suspend fun getStrokes(pageId: Long): List<Stroke>
     suspend fun getTexts(pageId: Long): List<CanvasText>
     suspend fun getImages(pageId: Long): List<CanvasImage>
+    suspend fun getPageVersion(versionId: Long): PageVersion?
+    suspend fun getPageVersions(pageId: Long): List<PageVersion>
+    suspend fun getAllPageVersions(): List<PageVersion>
+    suspend fun addPageVersion(
+        pageId: Long,
+        createdAt: Long,
+        reason: PageVersionReason,
+        snapshotName: String,
+        previewName: String,
+        elementCount: Int,
+    ): PageVersion
+    suspend fun deletePageVersions(ids: List<Long>)
+    suspend fun replacePageContent(noteId: Long, snapshot: PageSnapshot)
+    suspend fun applyRecoveredStroke(
+        operationId: String,
+        noteId: Long,
+        pageId: Long,
+        stroke: StrokeDraft,
+    ): Boolean
+    suspend fun pruneAppliedRecoveryOperations(cutoff: Long)
     suspend fun saveStroke(noteId: Long, pageId: Long, stroke: StrokeDraft): Stroke
     suspend fun saveStrokes(noteId: Long, pageId: Long, strokes: List<StrokeDraft>): List<Stroke>
+    suspend fun saveStrokesWithRecoveryIds(
+        noteId: Long,
+        pageId: Long,
+        strokes: List<Pair<String, StrokeDraft>>,
+    ): List<Stroke>
     suspend fun deleteStrokes(noteId: Long, strokes: List<Stroke>)
     suspend fun restoreStrokes(noteId: Long, strokes: List<Stroke>)
     suspend fun replaceStrokes(

@@ -50,6 +50,16 @@ class PageThumbnailStore(context: Context) {
 
     fun exists(pageId: Long): Boolean = file(pageId).isFile
 
+    fun clearMemory() = memoryCache.evictAll()
+
+    suspend fun clearFiles() = withContext(Dispatchers.IO) {
+        memoryCache.evictAll()
+        directory.listFiles().orEmpty().forEach(File::delete)
+        _revisions.value = emptyMap()
+    }
+
+    fun sizeBytes(): Long = directory.listFiles().orEmpty().sumOf(File::length)
+
     private fun file(pageId: Long) = File(directory, "page_$pageId.webp")
 
     private companion object {

@@ -4,4 +4,7 @@ sealed interface CanvasEvent {
     data class PendingPersisted(val token: Long) : CanvasEvent
     data class PendingDiscarded(val token: Long) : CanvasEvent
     data object RefreshStrokes : CanvasEvent
+    data object SaveDelayed : CanvasEvent
+    data object RecoveryJournalPreserved : CanvasEvent
+    data object VersionRestored : CanvasEvent
 }

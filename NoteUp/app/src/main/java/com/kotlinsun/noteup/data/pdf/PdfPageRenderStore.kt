@@ -118,6 +118,11 @@ class PdfPageRenderStore(
         }
     }
 
+    fun clearMemory() {
+        synchronized(displayCache) { displayCache.evictAll() }
+        synchronized(tileCache) { tileCache.evictAll() }
+    }
+
     private fun renderTile(
         background: PdfPageBackground,
         tileX: Int,

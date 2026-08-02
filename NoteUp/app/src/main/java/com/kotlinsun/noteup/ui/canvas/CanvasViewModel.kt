@@ -8,6 +8,8 @@ import com.kotlinsun.noteup.data.export.NoteExportService
 import com.kotlinsun.noteup.data.pdf.PdfDocumentStore
 import com.kotlinsun.noteup.data.pdf.PdfPageRenderStore
 import com.kotlinsun.noteup.data.image.CanvasImageStore
+import com.kotlinsun.noteup.data.recovery.RecoveryJournal
+import com.kotlinsun.noteup.data.version.PageVersionService
 import com.kotlinsun.noteup.data.preferences.CustomColorPaletteStore
 import com.kotlinsun.noteup.data.preferences.DrawingToolSettingsStore
 import com.kotlinsun.noteup.data.thumbnail.PageThumbnailService
@@ -33,9 +35,12 @@ import com.kotlinsun.noteup.domain.model.opaqueColor
 import com.kotlinsun.noteup.domain.model.ExportFormat
 import com.kotlinsun.noteup.domain.model.ExportUiState
 import com.kotlinsun.noteup.domain.model.Note
+import com.kotlinsun.noteup.domain.model.PageVersion
+import com.kotlinsun.noteup.domain.model.RecoveryEntry
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,6 +61,9 @@ import kotlinx.coroutines.delay
 
 private const val ADD_BATCH_WINDOW_MILLIS = 20L
 private const val MAXIMUM_ADD_BATCH_SIZE = 16
+private const val MAXIMUM_SAVE_ATTEMPTS = 3
+private const val SAVE_QUEUE_DELAY_WARNING_MILLIS = 1_500L
+private const val SAVE_QUEUE_DELAY_WARNING_COOLDOWN_MILLIS = 10_000L
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CanvasViewModel(
@@ -69,15 +77,19 @@ class CanvasViewModel(
     private val pdfDocumentStore: PdfDocumentStore,
     private val pdfPageRenderStore: PdfPageRenderStore,
     private val canvasImageStore: CanvasImageStore,
+    private val recoveryJournal: RecoveryJournal,
+    private val pageVersionService: PageVersionService,
 ) : ViewModel() {
 
     private val operationQueue = Channel<CanvasOperation>(Channel.UNLIMITED)
     private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val tokenToStroke = mutableMapOf<Long, Stroke>()
+    private val tokenToRecoveryId = mutableMapOf<Long, String>()
     private val tokensScheduledForErase = ConcurrentHashMap.newKeySet<Long>()
     private val undoStack = ArrayDeque<CanvasCommand>()
     private val redoStack = ArrayDeque<CanvasCommand>()
     private val pendingOperations = MutableStateFlow(0)
+    private var lastQueueDelayWarningAt = 0L
     private val pageCreationInProgress = MutableStateFlow(false)
     private val suppressedStrokeIds = MutableStateFlow<Set<Long>>(emptySet())
     private val historyState = MutableStateFlow(HistoryState())
@@ -134,6 +146,12 @@ class CanvasViewModel(
             }
         }
 
+    val pageVersions = content.flatMapLatest { state ->
+        (state as? CanvasUiState.Ready)?.page?.id
+            ?.let(repository::observePageVersions)
+            ?: flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     private val baseUiState = combine(
         content, pendingOperations, historyState, viewportState, pageCreationInProgress,
     ) { state, pending, history, viewports, isPageChanging ->
@@ -175,6 +193,13 @@ class CanvasViewModel(
             while (true) {
                 val operation = deferredOperation ?: operationQueue.receiveCatching().getOrNull() ?: break
                 deferredOperation = null
+                val now = System.currentTimeMillis()
+                if (now - operation.enqueuedAt > SAVE_QUEUE_DELAY_WARNING_MILLIS &&
+                    now - lastQueueDelayWarningAt > SAVE_QUEUE_DELAY_WARNING_COOLDOWN_MILLIS
+                ) {
+                    lastQueueDelayWarningAt = now
+                    _events.tryEmit(CanvasEvent.SaveDelayed)
+                }
                 if (operation is CanvasOperation.Add) {
                     delay(ADD_BATCH_WINDOW_MILLIS)
                     val batch = mutableListOf(operation)
@@ -188,32 +213,60 @@ class CanvasViewModel(
                         }
                     }
                     processAddBatch(batch)
-                    pendingOperations.update { (it - batch.size).coerceAtLeast(0) }
+                    completePendingOperations(batch.size)
                 } else {
                     processOperation(operation)
                     if (operation is CanvasOperation.PageOperation) pageCreationInProgress.value = false
-                    pendingOperations.update { (it - 1).coerceAtLeast(0) }
+                    completePendingOperations(1)
                 }
             }
         }
     }
 
     private suspend fun processAddBatch(operations: List<CanvasOperation.Add>) {
+        val pageId = operations.first().pageId
+        var journaledCount = 0
         runCatching {
-            val saved = repository.saveStrokes(
-                noteId, operations.first().pageId, operations.map { it.stroke.draft },
-            )
+            runCatching { pageVersionService.capture(pageId) }
+            operations.forEach { operation ->
+                recoveryJournal.write(
+                    RecoveryEntry(
+                        operation.operationId,
+                        noteId,
+                        pageId,
+                        operation.enqueuedAt,
+                        operation.stroke.draft,
+                    ),
+                )
+                journaledCount++
+            }
+            val saved = retrySave {
+                repository.saveStrokesWithRecoveryIds(
+                    noteId,
+                    pageId,
+                    operations.map { it.operationId to it.stroke.draft },
+                )
+            }
             operations.zip(saved).forEach { (operation, stroke) ->
                 tokenToStroke[operation.stroke.token] = stroke
+                tokenToRecoveryId -= operation.stroke.token
                 if (operation.stroke.token in tokensScheduledForErase) suppress(stroke.id)
                 pushNewCommand(CanvasCommand.AddStroke(stroke))
                 _events.tryEmit(CanvasEvent.PendingPersisted(operation.stroke.token))
             }
-            thumbnailService.request(operations.first().pageId)
+            recoveryJournal.delete(operations.map(CanvasOperation.Add::operationId))
+            thumbnailService.request(pageId)
         }.onFailure {
-            operations.forEach { rollbackVisualState(it) }
-            _errors.tryEmit(Unit)
-            _events.tryEmit(CanvasEvent.RefreshStrokes)
+            if (journaledCount == operations.size) {
+                _events.tryEmit(CanvasEvent.RecoveryJournalPreserved)
+            } else {
+                recoveryJournal.delete(operations.map(CanvasOperation.Add::operationId))
+                operations.forEach { operation ->
+                    tokenToRecoveryId -= operation.stroke.token
+                    rollbackVisualState(operation)
+                }
+                _errors.tryEmit(Unit)
+            }
         }
     }
 
@@ -224,8 +277,17 @@ class CanvasViewModel(
             _errors.tryEmit(Unit)
             return
         }
-        enqueue(CanvasOperation.Add(stroke, pageId))
+        val operation = CanvasOperation.Add(stroke, pageId)
+        tokenToRecoveryId[stroke.token] = operation.operationId
+        if (!enqueue(operation)) tokenToRecoveryId -= stroke.token
     }
+
+    fun restoreVersion(versionId: Long) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        if (pendingOperations.value == 0) enqueue(CanvasOperation.RestoreVersion(versionId, state.page.id))
+    }
+
+    suspend fun loadVersionPreview(version: PageVersion) = pageVersionService.loadPreview(version)
 
     fun addText(draft: CanvasTextDraft) {
         val pageId = (uiState.value as? CanvasUiState.Ready)?.page?.id ?: return
@@ -333,11 +395,11 @@ class CanvasViewModel(
     }
 
     fun undo() {
-        if (pendingOperations.value == 0 && historyState.value.canUndo) enqueue(CanvasOperation.Undo)
+        if (pendingOperations.value == 0 && historyState.value.canUndo) enqueue(CanvasOperation.Undo())
     }
 
     fun redo() {
-        if (pendingOperations.value == 0 && historyState.value.canRedo) enqueue(CanvasOperation.Redo)
+        if (pendingOperations.value == 0 && historyState.value.canRedo) enqueue(CanvasOperation.Redo())
     }
 
     fun selectPreviousPage() {
@@ -435,7 +497,10 @@ class CanvasViewModel(
 
     private suspend fun processOperation(operation: CanvasOperation) {
         runCatching {
-            when (operation) {
+            operation.versionPageId()?.let { pageId ->
+                runCatching { pageVersionService.capture(pageId) }
+            }
+            retrySave { when (operation) {
                 is CanvasOperation.Add -> processAdd(operation.stroke, operation.pageId)
                 is CanvasOperation.Erase -> processErase(operation.targets)
                 is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
@@ -451,9 +516,14 @@ class CanvasViewModel(
                 is CanvasOperation.CreatePage -> processCreatePage(operation.template)
                 is CanvasOperation.DeletePage -> processDeletePage(operation.pageId, operation.nextPageId)
                 is CanvasOperation.ReorderPages -> repository.reorderPages(noteId, operation.pageIds)
-                CanvasOperation.Undo -> processUndo()
-                CanvasOperation.Redo -> processRedo()
-            }
+                is CanvasOperation.RestoreVersion -> {
+                    pageVersionService.restore(noteId, operation.versionId)
+                    clearPageSession()
+                    _events.tryEmit(CanvasEvent.VersionRestored)
+                }
+                is CanvasOperation.Undo -> processUndo()
+                is CanvasOperation.Redo -> processRedo()
+            } }
         }.onFailure {
             rollbackVisualState(operation)
             if (operation !is CanvasOperation.ExportPage && operation !is CanvasOperation.ExportPdf) {
@@ -603,6 +673,11 @@ class CanvasViewModel(
         }.distinctBy(Stroke::id)
         targets.filterIsInstance<ErasableStroke.Pending>().forEach {
             tokensScheduledForErase -= it.stroke.token
+            if (tokenToStroke[it.stroke.token] == null) {
+                tokenToRecoveryId.remove(it.stroke.token)?.let { operationId ->
+                    recoveryJournal.delete(listOf(operationId))
+                }
+            }
         }
         if (strokes.isEmpty()) return
         strokes.forEach { suppress(it.id) }
@@ -669,7 +744,8 @@ class CanvasViewModel(
                 val clipboardImages = clipboardState.value.images
                     .mapTo(linkedSetOf(), CanvasImage::storageName)
                 canvasImageStore.cleanupOrphans(
-                    repository.getReferencedImageStorageNames() + clipboardImages,
+                    repository.getReferencedImageStorageNames() + clipboardImages +
+                        pageVersionService.referencedImageStorageNames(),
                 )
             }
         }
@@ -803,8 +879,9 @@ class CanvasViewModel(
             is CanvasOperation.CreatePage -> Unit
             is CanvasOperation.DeletePage -> Unit
             is CanvasOperation.ReorderPages -> Unit
-            CanvasOperation.Undo -> rollbackUndo()
-            CanvasOperation.Redo -> rollbackRedo()
+            is CanvasOperation.RestoreVersion -> Unit
+            is CanvasOperation.Undo -> rollbackUndo()
+            is CanvasOperation.Redo -> rollbackRedo()
         }
     }
 
@@ -856,6 +933,49 @@ class CanvasViewModel(
         return result.isSuccess
     }
 
+    private fun completePendingOperations(count: Int) {
+        pendingOperations.update { (it - count).coerceAtLeast(0) }
+        if (pendingOperations.value == 0) {
+            tokenToStroke.clear()
+            tokensScheduledForErase.clear()
+        }
+    }
+
+    private suspend fun <T> retrySave(block: suspend () -> T): T {
+        var lastError: Throwable? = null
+        repeat(MAXIMUM_SAVE_ATTEMPTS) { attempt ->
+            try {
+                return block()
+            } catch (error: Throwable) {
+                lastError = error
+                if (attempt < MAXIMUM_SAVE_ATTEMPTS - 1) delay(150L shl attempt)
+            }
+        }
+        throw checkNotNull(lastError)
+    }
+
+    private fun CanvasOperation.versionPageId(): Long? = when (this) {
+        is CanvasOperation.Add -> null
+        is CanvasOperation.Erase -> targets.firstOrNull()?.pageId()
+        is CanvasOperation.AreaErase -> replacements.firstOrNull()?.target?.pageId()
+        is CanvasOperation.AddText -> pageId
+        is CanvasOperation.ImportImage -> pageId
+        is CanvasOperation.TransformSelection -> change.before.pageId() ?: change.after.pageId()
+        is CanvasOperation.DeleteSelection -> selection.pageId()
+        is CanvasOperation.PasteSelection -> pageId
+        is CanvasOperation.RestoreVersion -> null
+        is CanvasOperation.ExportPage, is CanvasOperation.ExportPdf,
+        is CanvasOperation.CreatePage, is CanvasOperation.DeletePage,
+        is CanvasOperation.ReorderPages -> null
+        is CanvasOperation.Undo -> undoStack.peekLast()?.pageId()
+        is CanvasOperation.Redo -> redoStack.peekLast()?.pageId()
+    }
+
+    private fun ErasableStroke.pageId(): Long = when (this) {
+        is ErasableStroke.Persisted -> stroke.pageId
+        is ErasableStroke.Pending -> (uiState.value as? CanvasUiState.Ready)?.page?.id ?: 0L
+    }
+
     private fun updateSettings(settings: DrawingSettings) {
         _settings.value = settings
         settingsStore.save(settings)
@@ -884,36 +1004,47 @@ class CanvasViewModel(
     }
 
     private sealed interface CanvasOperation {
-        data class Add(val stroke: PendingCanvasStroke, val pageId: Long) : CanvasOperation
-        data class Erase(val targets: List<ErasableStroke>) : CanvasOperation
-        data class AreaErase(val replacements: List<AreaEraseReplacement>) : CanvasOperation
-        data class AddText(val draft: CanvasTextDraft, val pageId: Long) : CanvasOperation
+        val enqueuedAt: Long
+
+        data class Add(
+            val stroke: PendingCanvasStroke,
+            val pageId: Long,
+            val operationId: String = UUID.randomUUID().toString(),
+            override val enqueuedAt: Long = System.currentTimeMillis(),
+        ) : CanvasOperation
+        data class Erase(val targets: List<ErasableStroke>, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class AreaErase(val replacements: List<AreaEraseReplacement>, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class AddText(val draft: CanvasTextDraft, val pageId: Long, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
         data class ImportImage(
             val uri: Uri,
             val pageId: Long,
             val pageAspectRatio: Float,
+            override val enqueuedAt: Long = System.currentTimeMillis(),
         ) : CanvasOperation
-        data class TransformSelection(val change: SelectionChange) : CanvasOperation
-        data class DeleteSelection(val selection: CanvasSelection) : CanvasOperation
+        data class TransformSelection(val change: SelectionChange, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class DeleteSelection(val selection: CanvasSelection, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
         data class PasteSelection(
             val source: CanvasSelection,
             val pageId: Long,
             val offsetX: Float,
             val offsetY: Float,
+            override val enqueuedAt: Long = System.currentTimeMillis(),
         ) : CanvasOperation
         data class ExportPage(
             val note: Note,
             val pageId: Long,
             val pageNumber: Int,
             val format: ExportFormat,
+            override val enqueuedAt: Long = System.currentTimeMillis(),
         ) : CanvasOperation
-        data class ExportPdf(val note: Note) : CanvasOperation
+        data class ExportPdf(val note: Note, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
         sealed interface PageOperation : CanvasOperation
-        data class CreatePage(val template: PageTemplate) : PageOperation
-        data class DeletePage(val pageId: Long, val nextPageId: Long?) : PageOperation
-        data class ReorderPages(val pageIds: List<Long>) : PageOperation
-        data object Undo : CanvasOperation
-        data object Redo : CanvasOperation
+        data class CreatePage(val template: PageTemplate, override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
+        data class DeletePage(val pageId: Long, val nextPageId: Long?, override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
+        data class ReorderPages(val pageIds: List<Long>, override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
+        data class RestoreVersion(val versionId: Long, val pageId: Long, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class Undo(override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class Redo(override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
     }
 
     private sealed interface CanvasCommand {
@@ -945,6 +1076,8 @@ class CanvasViewModel(
         private val pdfDocumentStore: PdfDocumentStore,
         private val pdfPageRenderStore: PdfPageRenderStore,
         private val canvasImageStore: CanvasImageStore,
+        private val recoveryJournal: RecoveryJournal,
+        private val pageVersionService: PageVersionService,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -952,6 +1085,7 @@ class CanvasViewModel(
                 noteId, repository, settingsStore, customColorPaletteStore,
                 thumbnailStore, thumbnailService, exportService,
                 pdfDocumentStore, pdfPageRenderStore, canvasImageStore,
+                recoveryJournal, pageVersionService,
             ) as T
     }
 

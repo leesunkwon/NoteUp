@@ -23,4 +23,5 @@ interface CanvasTextDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertAll(values: List<CanvasTextEntity>)
     @Update suspend fun updateAll(values: List<CanvasTextEntity>)
     @Query("DELETE FROM canvas_texts WHERE id IN (:ids)") suspend fun deleteByIds(ids: List<Long>)
+    @Query("DELETE FROM canvas_texts WHERE pageId = :pageId") suspend fun deleteByPage(pageId: Long)
 }
