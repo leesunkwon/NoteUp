@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.PorterDuff
 import android.util.AttributeSet
@@ -212,6 +213,12 @@ class DrawingCanvasView @JvmOverloads constructor(
     }
 
     fun currentSelection(): CanvasSelection = selection
+
+    fun visiblePageCenterNormalized(): PointF {
+        val contentX = toContentX(width / 2f)
+        val contentY = toContentY(height / 2f)
+        return PointF(normalizedPageX(contentX), normalizedPageY(contentY))
+    }
 
     fun selectionBoundsInView(): RectF? = if (selectionBounds.isEmpty) {
         null

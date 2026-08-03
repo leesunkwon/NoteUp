@@ -72,6 +72,7 @@
     <dimen name="page_thumbnail_height">119dp</dimen>
     <dimen name="page_thumbnail_item_width">228dp</dimen>
     <dimen name="page_panel_portrait_height">280dp</dimen>
+    <dimen name="ai_assistant_panel_width">384dp</dimen>
     <dimen name="pen_selected_stroke_width">3dp</dimen>
     <dimen name="export_status_width">96dp</dimen>
     <dimen name="tool_popup_width">312dp</dimen>

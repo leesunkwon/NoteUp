@@ -23,6 +23,9 @@
         <argument
             android:name="noteId"
             app:argType="long" />
+        <action
+            android:id="@+id/action_canvas_to_ai_settings"
+            app:destination="@id/settingsGraph" />
     </fragment>
 
     <navigation

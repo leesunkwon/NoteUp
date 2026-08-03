@@ -168,7 +168,9 @@ class SettingsViewModel(
     fun testAiModel(prompt: String) {
         if (
             aiModelDeleting.value ||
-            onDeviceAiRepository.modelState.value !is AiModelState.Ready
+            onDeviceAiRepository.modelState.value !is AiModelState.Ready ||
+            onDeviceAiRepository.engineState.value is AiEngineState.Loading ||
+            onDeviceAiRepository.engineState.value is AiEngineState.Generating
         ) {
             aiTestState.value = AiTestUiState.Failed(AiTestFailure.MODEL_UNAVAILABLE)
             return
@@ -208,8 +210,7 @@ class SettingsViewModel(
 
     private fun cancelAiTest(updateState: Boolean) {
         aiTestRequestId++
-        onDeviceAiRepository.cancelGeneration()
-        aiTestJob?.cancel()
+        aiTestJob?.takeIf { it.isActive }?.cancel()
         aiTestJob = null
         if (updateState && aiTestState.value is AiTestUiState.Running) {
             aiTestState.value = AiTestUiState.Cancelled

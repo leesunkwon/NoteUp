@@ -430,6 +430,28 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/ai_assistant_panel"
+        android:layout_width="@dimen/ai_assistant_panel_width"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/noteup_bg_layer_default"
+        app:cardCornerRadius="@dimen/seed_radius_r4"
+        app:cardElevation="0dp"
+        app:layout_constraintBottom_toTopOf="@id/page_navigation_bar"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/canvas_toolbar"
+        app:strokeColor="@color/noteup_stroke_neutral_weak"
+        app:strokeWidth="@dimen/hairline_width"
+        tools:visibility="visible">
+
+        <include
+            android:id="@+id/ai_assistant_content"
+            layout="@layout/view_ai_assistant_panel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </com.google.android.material.card.MaterialCardView>
+
     <com.google.android.material.progressindicator.CircularProgressIndicator
         android:id="@+id/loading_indicator"
         android:layout_width="wrap_content"
