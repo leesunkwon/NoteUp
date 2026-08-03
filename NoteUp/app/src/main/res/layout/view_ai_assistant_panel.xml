@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clickable="true"
+    android:focusable="false"
+    android:importantForAccessibility="no"
+    android:padding="@dimen/spacing_medium">
+
+    <TextView
+        android:id="@+id/ai_assistant_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:accessibilityHeading="true"
+        android:text="@string/ai_assistant_title"
+        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+        app:layout_constraintEnd_toStartOf="@id/close_ai_assistant_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/ai_assistant_local_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_extra_small"
+        android:text="@string/ai_assistant_local_processing"
+        android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+        android:textColor="@color/noteup_fg_neutral_muted"
+        app:layout_constraintEnd_toStartOf="@id/close_ai_assistant_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/ai_assistant_title" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/close_ai_assistant_button"
+        style="@style/Widget.NoteUp.Button.Utility"
+        android:layout_width="wrap_content"
+        android:layout_height="@dimen/control_height"
+        android:contentDescription="@string/ai_assistant_close_description"
+        android:minWidth="@dimen/control_height"
+        android:text="@string/close"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <View
+        android:id="@+id/ai_assistant_header_divider"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/hairline_width"
+        android:layout_marginTop="@dimen/spacing_small"
+        android:background="@color/noteup_stroke_neutral_weak"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/close_ai_assistant_button" />
+
+    <LinearLayout
+        android:id="@+id/ai_model_unavailable_state"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_large"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/ai_assistant_header_divider"
+        tools:visibility="visible">
+
+        <TextView
+            android:id="@+id/ai_model_unavailable_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/ai_assistant_model_unavailable"
+            android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:gravity="center"
+            android:text="@string/ai_assistant_model_unavailable_description"
+            android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+            android:textColor="@color/noteup_fg_neutral_muted" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/open_ai_settings_button"
+            style="@style/Widget.NoteUp.Button.Primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:minHeight="@dimen/control_height"
+            android:text="@string/ai_assistant_open_model_settings" />
+    </LinearLayout>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/ai_assistant_ready_content"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/ai_assistant_header_divider">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/ai_context_container"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_small"
+            app:cardBackgroundColor="@color/noteup_bg_neutral_weak"
+            app:cardCornerRadius="@dimen/seed_radius_r2"
+            app:cardElevation="0dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:strokeColor="@color/noteup_stroke_neutral_weak"
+            app:strokeWidth="@dimen/hairline_width">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_small">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ai_assistant_context_title"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+                    android:textColor="@color/noteup_fg_neutral_muted" />
+
+                <TextView
+                    android:id="@+id/ai_context_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:ellipsize="end"
+                    android:maxLines="3"
+                    android:text="@string/ai_assistant_context_empty"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Body"
+                    tools:text="선택한 텍스트 내용이 여기에 표시됩니다." />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/ai_generation_progress"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:indeterminate="true"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/ai_context_container"
+            tools:visibility="visible" />
+
+        <TextView
+            android:id="@+id/ai_status_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:accessibilityLiveRegion="polite"
+            android:maxLines="2"
+            android:text="@string/ai_assistant_status_idle"
+            android:textAppearance="@style/TextAppearance.NoteUp.Caption"
+            android:textColor="@color/noteup_fg_neutral_muted"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/ai_generation_progress" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/ai_response_container"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:layout_marginBottom="@dimen/spacing_small"
+            app:cardBackgroundColor="@color/noteup_bg_neutral_weak"
+            app:cardCornerRadius="@dimen/seed_radius_r2"
+            app:cardElevation="0dp"
+            app:layout_constraintBottom_toTopOf="@id/ai_question_input_layout"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/ai_status_text"
+            app:strokeColor="@color/noteup_stroke_neutral_weak"
+            app:strokeWidth="@dimen/hairline_width">
+
+            <androidx.core.widget.NestedScrollView
+                android:id="@+id/ai_response_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fillViewport="true"
+                android:padding="@dimen/spacing_small">
+
+                <TextView
+                    android:id="@+id/ai_response_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ai_assistant_response_placeholder"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Body"
+                    android:textIsSelectable="true"
+                    tools:text="AI가 생성한 답변이 실시간으로 표시됩니다." />
+            </androidx.core.widget.NestedScrollView>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/ai_question_input_layout"
+            style="@style/Widget.NoteUp.TextInputLayout"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="@string/ai_assistant_question_hint"
+            app:layout_constraintBottom_toTopOf="@id/ai_request_actions"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/ai_question_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapSentences|textMultiLine"
+                android:maxLines="5"
+                android:minHeight="@dimen/control_height"
+                android:minLines="2" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <LinearLayout
+            android:id="@+id/ai_request_actions"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:gravity="end|center_vertical"
+            android:orientation="horizontal"
+            app:layout_constraintBottom_toTopOf="@id/ai_insert_actions"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ai_regenerate_button"
+                style="@style/Widget.NoteUp.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/control_height"
+                android:text="@string/ai_assistant_regenerate"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ai_cancel_button"
+                style="@style/Widget.NoteUp.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/control_height"
+                android:text="@string/ai_assistant_cancel"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ai_send_button"
+                style="@style/Widget.NoteUp.Button.Primary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/control_height"
+                android:text="@string/ai_assistant_send" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/ai_insert_actions"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_small"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            tools:visibility="visible">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ai_insert_current_page_button"
+                style="@style/Widget.NoteUp.Button.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/spacing_extra_small"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:maxLines="2"
+                android:minHeight="@dimen/control_height"
+                android:paddingHorizontal="@dimen/spacing_extra_small"
+                android:text="@string/ai_assistant_insert_current_page" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ai_insert_new_page_button"
+                style="@style/Widget.NoteUp.Button.Primary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/spacing_extra_small"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:maxLines="2"
+                android:minHeight="@dimen/control_height"
+                android:paddingHorizontal="@dimen/spacing_extra_small"
+                android:text="@string/ai_assistant_insert_new_page" />
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

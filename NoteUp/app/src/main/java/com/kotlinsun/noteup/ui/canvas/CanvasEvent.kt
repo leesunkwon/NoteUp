@@ -7,4 +7,6 @@ sealed interface CanvasEvent {
     data object SaveDelayed : CanvasEvent
     data object RecoveryJournalPreserved : CanvasEvent
     data object VersionRestored : CanvasEvent
+    data class AiResultInserted(val newPage: Boolean) : CanvasEvent
+    data object AiResultInsertionFailed : CanvasEvent
 }

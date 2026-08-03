@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.ImageView
@@ -23,14 +24,17 @@ import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.FileProvider
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -47,6 +51,8 @@ import com.kotlinsun.noteup.databinding.DialogColorPickerBinding
 import com.kotlinsun.noteup.databinding.DialogCustomColorPaletteBinding
 import com.kotlinsun.noteup.databinding.ItemCustomColorBinding
 import com.kotlinsun.noteup.databinding.PopupToolSettingsBinding
+import com.kotlinsun.noteup.domain.ai.AiEngineState
+import com.kotlinsun.noteup.domain.ai.AiModelState
 import com.kotlinsun.noteup.domain.model.AppSettings
 import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
@@ -111,6 +117,13 @@ class CanvasFragment : Fragment() {
     private var imageRenderKey: String? = null
     private var pagePreloadJob: Job? = null
     private var pagePreloadKey: String? = null
+    private var currentAiAssistantState = AiAssistantUiState()
+    private var renderingAiPrompt = false
+    private var renderedAiResponse: String? = null
+    private var renderedAiPanelVisible = false
+    private val aiResponseAutoScroll = Runnable {
+        _binding?.aiAssistantContent?.aiResponseScroll?.fullScroll(View.FOCUS_DOWN)
+    }
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -159,6 +172,7 @@ class CanvasFragment : Fragment() {
             container.canvasImageStore,
             container.recoveryJournal,
             container.pageVersionService,
+            container.onDeviceAiRepository,
         )
     }
 
@@ -205,6 +219,7 @@ class CanvasFragment : Fragment() {
         }
         setupToolbar()
         setupPagePanel()
+        setupAiAssistantPanel()
         binding.pagePanel.isVisible = pagePanelOpen
         observeState()
     }
@@ -256,6 +271,7 @@ class CanvasFragment : Fragment() {
         zoomResetButton.setOnClickListener { drawingCanvas.resetZoom() }
         zoomInButton.setOnClickListener { drawingCanvas.adjustZoom(ZOOM_STEP) }
         pageListButton.setOnClickListener {
+            viewModel.closeAiAssistant()
             pagePanelOpen = !pagePanel.isVisible
             pagePanel.isVisible = pagePanelOpen
         }
@@ -263,6 +279,93 @@ class CanvasFragment : Fragment() {
             pagePanelOpen = false
             pagePanel.isVisible = false
         }
+    }
+
+    private fun setupAiAssistantPanel() = with(binding.aiAssistantContent) {
+        ViewCompat.setAccessibilityPaneTitle(
+            binding.aiAssistantPanel,
+            getString(R.string.ai_assistant_title),
+        )
+        closeAiAssistantButton.setOnClickListener {
+            viewModel.closeAiAssistant()
+            hideAiKeyboard()
+            binding.moreButton.requestFocus()
+        }
+        openAiSettingsButton.setOnClickListener {
+            val navController = findNavController()
+            if (navController.currentDestination?.id == R.id.canvasFragment) {
+                navController.navigate(R.id.action_canvas_to_ai_settings)
+                if (navController.currentDestination?.id == R.id.settingsFragment) {
+                    navController.navigate(
+                        R.id.action_settings_to_ai,
+                        null,
+                        NavOptions.Builder()
+                            .setPopUpTo(R.id.settingsFragment, true)
+                            .build(),
+                    )
+                }
+            }
+        }
+        aiQuestionInput.doAfterTextChanged { editable ->
+            if (!renderingAiPrompt) {
+                aiQuestionInputLayout.error = null
+                viewModel.updateAiPrompt(editable?.toString().orEmpty())
+            }
+        }
+        aiSendButton.setOnClickListener { submitAiQuestion() }
+        aiRegenerateButton.setOnClickListener { submitAiQuestion() }
+        aiCancelButton.setOnClickListener { viewModel.cancelAiGeneration() }
+        aiInsertCurrentPageButton.setOnClickListener {
+            viewModel.insertAiResponse(createNewPage = false)
+        }
+        aiInsertNewPageButton.setOnClickListener {
+            viewModel.insertAiResponse(createNewPage = true)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            if (resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
+                val panel = binding.aiAssistantPanel
+                val params = panel.layoutParams as ConstraintLayout.LayoutParams
+                val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+                val defaultHeight = if (imeVisible) {
+                    ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_SPREAD
+                } else {
+                    ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+                }
+                if (params.matchConstraintDefaultHeight != defaultHeight) {
+                    params.matchConstraintDefaultHeight = defaultHeight
+                    params.matchConstraintPercentHeight = AI_PANEL_PORTRAIT_HEIGHT_PERCENT
+                    panel.layoutParams = params
+                }
+            }
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.root)
+    }
+
+    private fun openAiAssistantPanel() {
+        dismissToolSettingsPopup()
+        pagePanelOpen = false
+        binding.pagePanel.isVisible = false
+        viewModel.openAiAssistant()
+    }
+
+    private fun submitAiQuestion() {
+        val input = binding.aiAssistantContent.aiQuestionInput
+        if (input.text?.toString().orEmpty().isBlank()) {
+            binding.aiAssistantContent.aiQuestionInputLayout.error =
+                getString(R.string.ai_assistant_question_required)
+            return
+        }
+        hideAiKeyboard()
+        val insertionCenter = binding.drawingCanvas.visiblePageCenterNormalized()
+        viewModel.generateAiResponse(insertionCenter.x, insertionCenter.y)
+    }
+
+    private fun hideAiKeyboard() {
+        val input = binding.aiAssistantContent.aiQuestionInput
+        input.clearFocus()
+        requireContext().getSystemService(InputMethodManager::class.java)
+            .hideSoftInputFromWindow(input.windowToken, 0)
     }
 
     private fun setupPagePanel() = with(binding) {
@@ -371,6 +474,7 @@ class CanvasFragment : Fragment() {
                 }
                 launch { viewModel.events.collect(::handleEvent) }
                 launch { viewModel.exportState.collect(::renderExportState) }
+                launch { viewModel.aiAssistantState.collect(::renderAiAssistant) }
             }
         }
     }
@@ -451,6 +555,7 @@ class CanvasFragment : Fragment() {
             renderZoomControls(MIN_ZOOM, controlsEnabled = false)
         }
         renderSelectionActionsState()
+        renderAiAssistant(currentAiAssistantState)
         updateInputEnabled()
     }
 
@@ -470,6 +575,111 @@ class CanvasFragment : Fragment() {
         zoomResetButton.isEnabled = controlsEnabled && clampedScale > MIN_ZOOM + ZOOM_EPSILON
         zoomInButton.isEnabled = controlsEnabled && clampedScale < MAX_ZOOM - ZOOM_EPSILON
         renderCanvasAccessibility()
+    }
+
+    private fun renderAiAssistant(state: AiAssistantUiState) = with(binding) {
+        currentAiAssistantState = state
+        val panelVisible = state.isOpen && currentState is CanvasUiState.Ready
+        aiAssistantPanel.isVisible = panelVisible
+        if (!panelVisible) {
+            renderedAiPanelVisible = false
+            return@with
+        }
+        if (!renderedAiPanelVisible) {
+            renderedAiPanelVisible = true
+            aiAssistantPanel.announceForAccessibility(getString(R.string.ai_assistant_title))
+        }
+
+        val panel = aiAssistantContent
+        val modelReady = state.modelState is AiModelState.Ready
+        panel.aiModelUnavailableState.isVisible = !modelReady
+        panel.aiAssistantReadyContent.isVisible = modelReady
+        if (!modelReady) {
+            panel.aiModelUnavailableMessage.setText(
+                when (state.modelState) {
+                    AiModelState.Checking -> R.string.ai_model_status_checking
+                    is AiModelState.Unsupported -> R.string.ai_model_status_unsupported
+                    is AiModelState.NotInstalled -> R.string.ai_model_status_not_downloaded
+                    AiModelState.Queued -> R.string.ai_model_status_queued
+                    is AiModelState.Downloading -> R.string.ai_model_status_downloading
+                    AiModelState.Verifying -> R.string.ai_model_status_verifying
+                    is AiModelState.Failed -> R.string.ai_model_status_failed
+                    is AiModelState.Ready -> R.string.ai_model_status_ready
+                },
+            )
+            return@with
+        }
+
+        renderingAiPrompt = true
+        if (panel.aiQuestionInput.text?.toString() != state.prompt) {
+            panel.aiQuestionInput.setText(state.prompt)
+            panel.aiQuestionInput.setSelection(state.prompt.length)
+        }
+        renderingAiPrompt = false
+        panel.aiContextText.setTextIfChanged(
+            state.contextText.ifBlank { getString(R.string.ai_assistant_context_empty) },
+        )
+
+        val statusRes = when {
+            state.isInserting -> R.string.ai_assistant_status_inserting
+            state.phase == AiAssistantPhase.GENERATING -> R.string.ai_assistant_status_generating
+            state.phase == AiAssistantPhase.COMPLETE -> R.string.ai_assistant_status_complete
+            state.phase == AiAssistantPhase.CANCELLED -> R.string.ai_assistant_status_cancelled
+            state.phase == AiAssistantPhase.FAILED -> R.string.ai_assistant_status_error
+            state.engineState is AiEngineState.Loading -> R.string.ai_assistant_status_loading
+            state.engineState is AiEngineState.Generating -> R.string.ai_assistant_status_busy
+            else -> R.string.ai_assistant_status_idle
+        }
+        panel.aiStatusText.setTextIfChanged(getString(statusRes))
+
+        val responseText = state.response.ifBlank {
+            getString(R.string.ai_assistant_response_placeholder)
+        }
+        if (renderedAiResponse != responseText) {
+            val responseScroll = panel.aiResponseScroll
+            val responseContent = responseScroll.getChildAt(0)
+            val autoScrollThreshold = AI_AUTO_SCROLL_THRESHOLD_DP * resources.displayMetrics.density
+            val wasNearBottom = responseContent == null ||
+                responseContent.bottom - (responseScroll.height + responseScroll.scrollY) <=
+                autoScrollThreshold
+            renderedAiResponse = responseText
+            panel.aiResponseText.text = responseText
+            if (
+                state.phase == AiAssistantPhase.GENERATING &&
+                state.response.isNotBlank() &&
+                wasNearBottom
+            ) {
+                responseScroll.removeCallbacks(aiResponseAutoScroll)
+                responseScroll.postOnAnimation(aiResponseAutoScroll)
+            }
+        }
+
+        val canvasBusy = (currentState as? CanvasUiState.Ready)?.isBusy != false
+        val generating = state.phase == AiAssistantPhase.GENERATING
+        val engineBusy = state.engineState is AiEngineState.Loading ||
+            (state.engineState is AiEngineState.Generating && !generating)
+        val canGenerate = state.prompt.isNotBlank() && !state.isInserting && !engineBusy
+        panel.aiGenerationProgress.isVisible = generating || state.isInserting
+        panel.aiQuestionInputLayout.isEnabled = !generating && !state.isInserting
+        panel.aiSendButton.isVisible = state.phase == AiAssistantPhase.IDLE
+        panel.aiSendButton.isEnabled = canGenerate
+        panel.aiCancelButton.isVisible = generating
+        panel.aiCancelButton.isEnabled = generating
+        panel.aiRegenerateButton.isVisible = state.phase in setOf(
+            AiAssistantPhase.COMPLETE,
+            AiAssistantPhase.CANCELLED,
+            AiAssistantPhase.FAILED,
+        )
+        panel.aiRegenerateButton.isEnabled = canGenerate
+        panel.aiInsertActions.isVisible =
+            state.phase == AiAssistantPhase.COMPLETE && state.response.isNotBlank()
+        panel.aiInsertCurrentPageButton.setTextIfChanged(
+            state.requestPageNumber?.let { pageNumber ->
+                getString(R.string.ai_assistant_insert_page_number, pageNumber)
+            } ?: getString(R.string.ai_assistant_insert_current_page),
+        )
+        panel.aiInsertCurrentPageButton.isEnabled = !canvasBusy && !state.isInserting
+        panel.aiInsertNewPageButton.isEnabled = !canvasBusy && !state.isInserting
     }
 
     private fun handleToolButtonClick(tool: DrawingTool) {
@@ -584,14 +794,20 @@ class CanvasFragment : Fragment() {
     private fun showMoreMenu() {
         val state = currentState as? CanvasUiState.Ready
         PopupMenu(requireContext(), binding.moreButton).apply {
-            menu.add(0, MORE_INSERT_IMAGE_ID, 0, R.string.insert_image).isEnabled =
+            menu.add(0, MORE_AI_ASSISTANT_ID, 0, R.string.ai_assistant_title).isEnabled =
+                state != null
+            menu.add(0, MORE_INSERT_IMAGE_ID, 1, R.string.insert_image).isEnabled =
                 state != null && !state.isBusy
-            menu.add(0, MORE_EXPORT_ID, 1, R.string.export).isEnabled = state != null && !state.isBusy
-            menu.add(0, MORE_SHORTCUTS_ID, 2, R.string.keyboard_shortcuts)
-            menu.add(0, MORE_VERSION_HISTORY_ID, 3, R.string.version_history).isEnabled =
+            menu.add(0, MORE_EXPORT_ID, 2, R.string.export).isEnabled = state != null && !state.isBusy
+            menu.add(0, MORE_SHORTCUTS_ID, 3, R.string.keyboard_shortcuts)
+            menu.add(0, MORE_VERSION_HISTORY_ID, 4, R.string.version_history).isEnabled =
                 state != null && !state.isBusy
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
+                    MORE_AI_ASSISTANT_ID -> {
+                        openAiAssistantPanel()
+                        true
+                    }
                     MORE_INSERT_IMAGE_ID -> {
                         imagePickerLauncher.launch(
                             androidx.activity.result.PickVisualMediaRequest(
@@ -766,6 +982,11 @@ class CanvasFragment : Fragment() {
         dismissToolSettingsPopup()
         binding.drawingCanvas.cancelActiveStroke()
         binding.drawingCanvas.clearSelection()
+        if (binding.aiAssistantPanel.isVisible) {
+            viewModel.closeAiAssistant()
+            hideAiKeyboard()
+            binding.moreButton.requestFocus()
+        }
         if (binding.pagePanel.isVisible) {
             pagePanelOpen = false
             binding.pagePanel.isVisible = false
@@ -1515,6 +1736,20 @@ class CanvasFragment : Fragment() {
         CanvasEvent.VersionRestored -> Snackbar.make(
             binding.root, R.string.version_restored, Snackbar.LENGTH_SHORT,
         ).show()
+        is CanvasEvent.AiResultInserted -> Snackbar.make(
+            binding.root,
+            if (event.newPage) {
+                R.string.ai_assistant_inserted_new_page
+            } else {
+                R.string.ai_assistant_inserted_current_page
+            },
+            Snackbar.LENGTH_SHORT,
+        ).show()
+        CanvasEvent.AiResultInsertionFailed -> Snackbar.make(
+            binding.root,
+            R.string.ai_assistant_insert_failed,
+            Snackbar.LENGTH_SHORT,
+        ).show()
     }
 
     private fun updateInputEnabled() {
@@ -1791,6 +2026,9 @@ class CanvasFragment : Fragment() {
         renderedHistoryControls = null
         renderedPageControls = null
         renderedSelectionActions = null
+        binding.aiAssistantContent.aiResponseScroll.removeCallbacks(aiResponseAutoScroll)
+        renderedAiResponse = null
+        renderedAiPanelVisible = false
         _binding = null
         super.onDestroyView()
     }
@@ -1837,6 +2075,9 @@ class CanvasFragment : Fragment() {
         const val MORE_SHORTCUTS_ID = 11
         const val MORE_INSERT_IMAGE_ID = 12
         const val MORE_VERSION_HISTORY_ID = 13
+        const val MORE_AI_ASSISTANT_ID = 14
+        const val AI_PANEL_PORTRAIT_HEIGHT_PERCENT = 0.48f
+        const val AI_AUTO_SCROLL_THRESHOLD_DP = 32f
         const val IMAGE_RENDER_BUCKET = 512
         const val MAX_IMAGE_RENDER_EDGE = 4096
         const val PRELOAD_EDGE = 1024

@@ -29,6 +29,7 @@ import com.kotlinsun.noteup.domain.model.CanvasText
 import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.CanvasImage
 import com.kotlinsun.noteup.domain.model.CanvasImageDraft
+import com.kotlinsun.noteup.domain.model.CreatedPageText
 import com.kotlinsun.noteup.domain.model.TextSize
 import com.kotlinsun.noteup.domain.model.highlighterColor
 import com.kotlinsun.noteup.domain.model.opaqueColor
@@ -37,13 +38,18 @@ import com.kotlinsun.noteup.domain.model.ExportUiState
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.PageVersion
 import com.kotlinsun.noteup.domain.model.RecoveryEntry
+import com.kotlinsun.noteup.domain.ai.AiEngineState
+import com.kotlinsun.noteup.domain.ai.AiModelState
+import com.kotlinsun.noteup.domain.ai.OnDeviceAiRepository
 import com.kotlinsun.noteup.domain.repository.NoteRepository
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -52,6 +58,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -79,6 +86,7 @@ class CanvasViewModel(
     private val canvasImageStore: CanvasImageStore,
     private val recoveryJournal: RecoveryJournal,
     private val pageVersionService: PageVersionService,
+    private val onDeviceAiRepository: OnDeviceAiRepository,
 ) : ViewModel() {
 
     private val operationQueue = Channel<CanvasOperation>(Channel.UNLIMITED)
@@ -97,6 +105,9 @@ class CanvasViewModel(
     private val viewportState = MutableStateFlow<Map<Long, CanvasViewport>>(emptyMap())
     private val selectionState = MutableStateFlow(CanvasSelection())
     private val clipboardState = MutableStateFlow(CanvasSelection())
+    private val aiAssistantSession = MutableStateFlow(AiAssistantUiState())
+    private var aiGenerationJob: Job? = null
+    private var aiRequestId = 0L
     private val _exportState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
     val exportState = _exportState.asStateFlow()
     private val _settings = MutableStateFlow(settingsStore.load())
@@ -107,12 +118,42 @@ class CanvasViewModel(
     private val _events = MutableSharedFlow<CanvasEvent>(extraBufferCapacity = 8)
     val events: Flow<CanvasEvent> = _events
 
+    val aiAssistantState = combine(
+        aiAssistantSession,
+        selectionState,
+        onDeviceAiRepository.modelState,
+        onDeviceAiRepository.engineState,
+    ) { session, selection, modelState, engineState ->
+        val selectedContext = selection.texts
+            .filter { it.content.isNotBlank() }
+            .distinctBy(CanvasText::id)
+            .sortedBy(CanvasText::elementIndex)
+            .joinToString(AI_CONTEXT_SEPARATOR) { it.content.trim() }
+            .take(MAXIMUM_AI_CONTEXT_LENGTH)
+        session.copy(
+            contextText = if (session.requestPageId == null) selectedContext else session.contextText,
+            modelState = modelState,
+            engineState = engineState,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = aiAssistantSession.value.copy(
+            modelState = onDeviceAiRepository.modelState.value,
+            engineState = onDeviceAiRepository.engineState.value,
+        ),
+    )
+
     private val content = combine(
         repository.observeNote(noteId),
         repository.observePages(noteId),
         selectedPageId,
     ) { note, pages, requestedPageId ->
-        val page = pages.firstOrNull { it.id == requestedPageId } ?: pages.firstOrNull()
+        val page = if (requestedPageId == null) {
+            pages.firstOrNull()
+        } else {
+            pages.firstOrNull { it.id == requestedPageId }
+        }
         Triple(note, pages, page)
     }.flatMapLatest { (note, pages, page) ->
             if (note == null || page == null) {
@@ -294,6 +335,191 @@ class CanvasViewModel(
         if (draft.content.isNotBlank()) enqueue(CanvasOperation.AddText(draft, pageId))
     }
 
+    fun openAiAssistant() {
+        aiAssistantSession.update { it.copy(isOpen = true) }
+    }
+
+    fun closeAiAssistant() {
+        aiAssistantSession.update { it.copy(isOpen = false) }
+    }
+
+    fun updateAiPrompt(prompt: String) {
+        aiAssistantSession.update { current ->
+            if (
+                current.prompt != prompt &&
+                current.phase != AiAssistantPhase.GENERATING &&
+                !current.isInserting
+            ) {
+                current.copy(
+                    prompt = prompt,
+                    contextText = "",
+                    response = "",
+                    requestPageId = null,
+                    requestPageNumber = null,
+                    phase = AiAssistantPhase.IDLE,
+                )
+            } else {
+                current.copy(prompt = prompt)
+            }
+        }
+    }
+
+    fun generateAiResponse(insertionCenterX: Float, insertionCenterY: Float) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        val currentSession = aiAssistantSession.value
+        val question = currentSession.prompt.trim()
+        if (
+            question.isEmpty() ||
+            currentSession.phase == AiAssistantPhase.GENERATING ||
+            currentSession.isInserting
+        ) return
+        if (onDeviceAiRepository.modelState.value !is AiModelState.Ready) {
+            aiAssistantSession.update {
+                it.copy(
+                    isOpen = true,
+                    phase = AiAssistantPhase.FAILED,
+                    response = "",
+                )
+            }
+            return
+        }
+        val engineBusy = when (onDeviceAiRepository.engineState.value) {
+            AiEngineState.Loading, AiEngineState.Generating -> aiGenerationJob?.isActive != true
+            else -> false
+        }
+        if (engineBusy) {
+            aiAssistantSession.update { it.copy(phase = AiAssistantPhase.FAILED) }
+            return
+        }
+
+        cancelAiGeneration(updateState = false)
+        val context = selectionState.value.texts
+            .filter { it.pageId == state.page.id && it.content.isNotBlank() }
+            .distinctBy(CanvasText::id)
+            .sortedBy(CanvasText::elementIndex)
+            .joinToString(AI_CONTEXT_SEPARATOR) { it.content.trim() }
+            .take(MAXIMUM_AI_CONTEXT_LENGTH)
+        val requestId = ++aiRequestId
+        aiAssistantSession.value = aiAssistantSession.value.copy(
+            isOpen = true,
+            contextText = context,
+            response = "",
+            requestPageId = state.page.id,
+            requestPageNumber = state.pagePosition + 1,
+            insertionCenterX = insertionCenterX.coerceIn(0f, 1f),
+            insertionCenterY = insertionCenterY.coerceIn(0f, 1f),
+            phase = AiAssistantPhase.GENERATING,
+            isInserting = false,
+        )
+        aiGenerationJob = viewModelScope.launch {
+            val response = StringBuilder()
+            try {
+                onDeviceAiRepository.generate(buildAiPrompt(question, context)).collect { chunk ->
+                    response.append(chunk)
+                    if (requestId == aiRequestId) {
+                        aiAssistantSession.update {
+                            it.copy(
+                                response = response.toString(),
+                                phase = AiAssistantPhase.GENERATING,
+                            )
+                        }
+                    }
+                }
+                if (requestId == aiRequestId) {
+                    aiAssistantSession.update {
+                        it.copy(
+                            response = response.toString().trim(),
+                            phase = if (response.isBlank()) {
+                                AiAssistantPhase.FAILED
+                            } else {
+                                AiAssistantPhase.COMPLETE
+                            },
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                if (requestId == aiRequestId) {
+                    aiAssistantSession.update { it.copy(phase = AiAssistantPhase.CANCELLED) }
+                }
+                throw cancelled
+            } catch (_: Throwable) {
+                if (requestId == aiRequestId) {
+                    aiAssistantSession.update { it.copy(phase = AiAssistantPhase.FAILED) }
+                }
+            } finally {
+                if (requestId == aiRequestId) aiGenerationJob = null
+            }
+        }
+    }
+
+    fun cancelAiGeneration() {
+        cancelAiGeneration(updateState = true)
+    }
+
+    fun insertAiResponse(createNewPage: Boolean) {
+        val state = uiState.value as? CanvasUiState.Ready ?: return
+        val assistant = aiAssistantSession.value
+        val content = assistant.response.trim()
+        if (
+            assistant.phase != AiAssistantPhase.COMPLETE ||
+            assistant.isInserting ||
+            content.isEmpty() ||
+            pendingOperations.value > 0
+        ) return
+
+        val draft = CanvasTextDraft(
+            x = (assistant.insertionCenterX - AI_TEXT_WIDTH / 2f)
+                .coerceIn(0f, 1f - AI_TEXT_WIDTH),
+            y = (assistant.insertionCenterY - AI_TEXT_VERTICAL_OFFSET)
+                .coerceIn(0f, 1f),
+            boxWidth = AI_TEXT_WIDTH,
+            content = content,
+            colorArgb = _settings.value.pen.colorArgb,
+            textSizeSp = _settings.value.textSize.sizeSp,
+        )
+        aiAssistantSession.update { it.copy(isInserting = true) }
+        val operation = if (createNewPage) {
+            pageCreationInProgress.value = true
+            CanvasOperation.CreatePageWithAiText(draft, state.page.id)
+        } else {
+            val targetPageId = assistant.requestPageId
+                ?.takeIf { requested -> state.pages.any { it.id == requested } }
+                ?: state.page.id
+            pageCreationInProgress.value = true
+            CanvasOperation.AddAiText(draft, targetPageId)
+        }
+        if (!enqueue(operation)) {
+            aiAssistantSession.update { it.copy(isInserting = false) }
+            if (operation is CanvasOperation.PageOperation) {
+                pageCreationInProgress.value = false
+            }
+        }
+    }
+
+    private fun cancelAiGeneration(updateState: Boolean) {
+        val activeJob = aiGenerationJob?.takeIf { it.isActive }
+        if (activeJob != null) {
+            aiRequestId++
+            activeJob.cancel()
+        }
+        aiGenerationJob = null
+        if (updateState && aiAssistantSession.value.phase == AiAssistantPhase.GENERATING) {
+            aiAssistantSession.update { it.copy(phase = AiAssistantPhase.CANCELLED) }
+        }
+    }
+
+    private fun buildAiPrompt(question: String, context: String): String = buildString {
+        append(AI_ASSISTANT_INSTRUCTION)
+        if (context.isNotBlank()) {
+            append(AI_CONTEXT_HEADER)
+            append(context)
+            append(AI_CONTEXT_FOOTER)
+        }
+        append(AI_QUESTION_HEADER)
+        append(question)
+        append(AI_ANSWER_INSTRUCTION)
+    }
+
     fun importImage(uri: Uri) {
         val state = uiState.value as? CanvasUiState.Ready ?: return
         if (pendingOperations.value > 0) return
@@ -395,11 +621,17 @@ class CanvasViewModel(
     }
 
     fun undo() {
-        if (pendingOperations.value == 0 && historyState.value.canUndo) enqueue(CanvasOperation.Undo())
+        if (pendingOperations.value == 0 && historyState.value.canUndo) {
+            pageCreationInProgress.value = true
+            if (!enqueue(CanvasOperation.Undo())) pageCreationInProgress.value = false
+        }
     }
 
     fun redo() {
-        if (pendingOperations.value == 0 && historyState.value.canRedo) enqueue(CanvasOperation.Redo())
+        if (pendingOperations.value == 0 && historyState.value.canRedo) {
+            pageCreationInProgress.value = true
+            if (!enqueue(CanvasOperation.Redo())) pageCreationInProgress.value = false
+        }
     }
 
     fun selectPreviousPage() {
@@ -505,6 +737,7 @@ class CanvasViewModel(
                 is CanvasOperation.Erase -> processErase(operation.targets)
                 is CanvasOperation.AreaErase -> processAreaErase(operation.replacements)
                 is CanvasOperation.AddText -> processAddText(operation.draft, operation.pageId)
+                is CanvasOperation.AddAiText -> processAddAiText(operation)
                 is CanvasOperation.ImportImage -> processImportImage(operation)
                 is CanvasOperation.TransformSelection -> processTransformSelection(operation.change)
                 is CanvasOperation.DeleteSelection -> processDeleteSelection(operation.selection)
@@ -513,7 +746,8 @@ class CanvasViewModel(
                 )
                 is CanvasOperation.ExportPage -> processExportPage(operation)
                 is CanvasOperation.ExportPdf -> processExportPdf(operation.note)
-                is CanvasOperation.CreatePage -> processCreatePage(operation.template)
+                is CanvasOperation.CreatePage -> processCreatePage(operation)
+                is CanvasOperation.CreatePageWithAiText -> processCreatePageWithAiText(operation)
                 is CanvasOperation.DeletePage -> processDeletePage(operation.pageId, operation.nextPageId)
                 is CanvasOperation.ReorderPages -> repository.reorderPages(noteId, operation.pageIds)
                 is CanvasOperation.RestoreVersion -> {
@@ -527,7 +761,14 @@ class CanvasViewModel(
         }.onFailure {
             rollbackVisualState(operation)
             if (operation !is CanvasOperation.ExportPage && operation !is CanvasOperation.ExportPdf) {
-                _errors.tryEmit(Unit)
+                if (
+                    operation is CanvasOperation.AddAiText ||
+                    operation is CanvasOperation.CreatePageWithAiText
+                ) {
+                    _events.tryEmit(CanvasEvent.AiResultInsertionFailed)
+                } else {
+                    _errors.tryEmit(Unit)
+                }
                 _events.tryEmit(CanvasEvent.RefreshStrokes)
             }
         }
@@ -552,6 +793,44 @@ class CanvasViewModel(
         selectionState.value = CanvasSelection(texts = listOf(text))
         pushNewCommand(CanvasCommand.ElementsAdded(emptyList(), listOf(text), emptyList()))
         thumbnailService.request(pageId)
+    }
+
+    private suspend fun processAddAiText(operation: CanvasOperation.AddAiText) {
+        val currentPageId = (uiState.value as? CanvasUiState.Ready)?.page?.id
+        val text = repository.addText(noteId, operation.pageId, operation.draft)
+        if (currentPageId != operation.pageId) {
+            clearPageSession()
+            selectedPageId.value = operation.pageId
+        }
+        selectionState.value = CanvasSelection(texts = listOf(text))
+        pushNewCommand(CanvasCommand.ElementsAdded(emptyList(), listOf(text), emptyList()))
+        thumbnailService.request(operation.pageId)
+        aiAssistantSession.update { it.copy(isInserting = false) }
+        _events.tryEmit(CanvasEvent.AiResultInserted(newPage = false))
+    }
+
+    private suspend fun processCreatePageWithAiText(
+        operation: CanvasOperation.CreatePageWithAiText,
+    ) {
+        val created = operation.created ?: repository.createPageWithText(
+            noteId,
+            PageTemplate.BLANK,
+            operation.draft,
+        ).also { operation.created = it }
+        awaitPage(created.page.id)
+        clearPageSession()
+        selectedPageId.value = created.page.id
+        viewportState.update { it + (created.page.id to CanvasViewport()) }
+        selectionState.value = CanvasSelection(texts = listOf(created.text))
+        pushNewCommand(
+            CanvasCommand.PageWithTextAdded(
+                created = created,
+                previousPageId = operation.previousPageId,
+            ),
+        )
+        thumbnailService.request(created.page.id)
+        aiAssistantSession.update { it.copy(isInserting = false) }
+        _events.tryEmit(CanvasEvent.AiResultInserted(newPage = true))
     }
 
     private suspend fun processImportImage(operation: CanvasOperation.ImportImage) {
@@ -705,8 +984,11 @@ class CanvasViewModel(
         pushNewCommand(CanvasCommand.ReplaceStrokes(removed, added))
     }
 
-    private suspend fun processCreatePage(template: PageTemplate) {
-        val pageId = repository.createPage(noteId, template)
+    private suspend fun processCreatePage(operation: CanvasOperation.CreatePage) {
+        val pageId = operation.createdPageId
+            ?: repository.createPage(noteId, operation.template)
+                .also { operation.createdPageId = it }
+        awaitPage(pageId)
         clearPageSession()
         selectedPageId.value = pageId
         viewportState.update { it + (pageId to CanvasViewport()) }
@@ -714,16 +996,23 @@ class CanvasViewModel(
     }
 
     private suspend fun processDeletePage(pageId: Long, nextPageId: Long?) {
-        val deleted = repository.deletePage(noteId, pageId)
+        val previousPageId = selectedPageId.value
+        if (nextPageId != null) selectedPageId.value = nextPageId
+        val deleted = try {
+            repository.deletePage(noteId, pageId)
+        } catch (error: Throwable) {
+            selectedPageId.value = previousPageId
+            throw error
+        }
+        discardRecoveryEntriesForPage(pageId)
         runCatching { thumbnailService.delete(pageId) }
         deleted.pdfStorageNames.forEach { storageName ->
             pdfPageRenderStore.evict(storageName)
             pdfDocumentStore.delete(storageName)
         }
-        deleted.imageStorageNames.forEach(canvasImageStore::delete)
+        runCatching { deleteUnusedImageAssets(deleted.imageStorageNames) }
         viewportState.update { it - pageId }
         clearPageSession()
-        selectedPageId.value = nextPageId
     }
 
     private fun switchPage(page: Page) {
@@ -734,21 +1023,53 @@ class CanvasViewModel(
     private fun clearPageSession() {
         undoStack.clear()
         redoStack.clear()
+        clearPageRuntimeState()
+        publishHistoryState()
+    }
+
+    private fun clearPageRuntimeState() {
         tokenToStroke.clear()
         tokensScheduledForErase.clear()
         suppressedStrokeIds.value = emptySet()
         selectionState.value = CanvasSelection()
-        publishHistoryState()
+        val protectedImageStorageNames = protectedInMemoryImageStorageNames()
         persistenceScope.launch {
             runCatching {
-                val clipboardImages = clipboardState.value.images
-                    .mapTo(linkedSetOf(), CanvasImage::storageName)
                 canvasImageStore.cleanupOrphans(
-                    repository.getReferencedImageStorageNames() + clipboardImages +
+                    repository.getReferencedImageStorageNames() + protectedImageStorageNames +
                         pageVersionService.referencedImageStorageNames(),
                 )
             }
         }
+    }
+
+    private suspend fun awaitPage(pageId: Long) {
+        repository.observePages(noteId).first { pages -> pages.any { it.id == pageId } }
+    }
+
+    private suspend fun discardRecoveryEntriesForPage(pageId: Long) {
+        val operationIds = recoveryJournal.entries()
+            .asSequence()
+            .filter { it.pageId == pageId }
+            .map(RecoveryEntry::operationId)
+            .toSet()
+        if (operationIds.isEmpty()) return
+        recoveryJournal.delete(operationIds)
+        tokenToRecoveryId.entries.removeAll { it.value in operationIds }
+    }
+
+    private fun protectedInMemoryImageStorageNames(): Set<String> = buildSet {
+        addAll(clipboardState.value.images.map(CanvasImage::storageName))
+        undoStack.forEach { addAll(it.imageStorageNames()) }
+        redoStack.forEach { addAll(it.imageStorageNames()) }
+    }
+
+    private suspend fun deleteUnusedImageAssets(storageNames: Collection<String>) {
+        if (storageNames.isEmpty()) return
+        val protected = repository.getReferencedImageStorageNames() +
+            protectedInMemoryImageStorageNames() +
+            pageVersionService.referencedImageStorageNames()
+        storageNames.filterNot { it in protected }.forEach(canvasImageStore::delete)
     }
 
     private suspend fun processUndo() {
@@ -758,12 +1079,15 @@ class CanvasViewModel(
             is CanvasCommand.ElementsTransformed -> command.before
             is CanvasCommand.ElementsDeleted -> command.selection
             is CanvasCommand.ElementsAdded -> CanvasSelection()
+            is CanvasCommand.PageWithTextAdded -> CanvasSelection()
             else -> selectionState.value
         }
         undoStack.removeLast()
         redoStack.addLast(command)
         publishHistoryState()
-        command.pageId()?.let(thumbnailService::request)
+        if (command !is CanvasCommand.PageWithTextAdded) {
+            command.pageId()?.let(thumbnailService::request)
+        }
     }
 
     private suspend fun processRedo() {
@@ -774,6 +1098,9 @@ class CanvasViewModel(
             is CanvasCommand.ElementsDeleted -> CanvasSelection()
             is CanvasCommand.ElementsAdded -> CanvasSelection(
                 command.strokes, command.texts, command.images,
+            )
+            is CanvasCommand.PageWithTextAdded -> CanvasSelection(
+                texts = listOf(command.created.text),
             )
             else -> selectionState.value
         }
@@ -809,6 +1136,18 @@ class CanvasViewModel(
             is CanvasCommand.ElementsTransformed -> repository.updateElements(
                 noteId, command.after.strokes, command.after.texts, command.after.images,
             )
+            is CanvasCommand.PageWithTextAdded -> {
+                val restored = repository.getPage(command.created.page.id)?.let { existingPage ->
+                    command.created.copy(page = existingPage)
+                } ?: repository.restorePageWithText(command.created)
+                command.created = restored
+                awaitPage(restored.page.id)
+                clearPageRuntimeState()
+                selectedPageId.value = restored.page.id
+                viewportState.update { it + (restored.page.id to CanvasViewport()) }
+                selectionState.value = CanvasSelection(texts = listOf(restored.text))
+                thumbnailService.request(restored.page.id)
+            }
         }
     }
 
@@ -838,6 +1177,25 @@ class CanvasViewModel(
             is CanvasCommand.ElementsTransformed -> repository.updateElements(
                 noteId, command.before.strokes, command.before.texts, command.before.images,
             )
+            is CanvasCommand.PageWithTextAdded -> {
+                selectedPageId.value = command.previousPageId
+                val deleted = try {
+                    repository.deletePage(noteId, command.created.page.id)
+                } catch (error: Throwable) {
+                    selectedPageId.value = command.created.page.id
+                    throw error
+                }
+                discardRecoveryEntriesForPage(command.created.page.id)
+                runCatching { thumbnailService.delete(command.created.page.id) }
+                deleted.pdfStorageNames.forEach { storageName ->
+                    pdfPageRenderStore.evict(storageName)
+                    pdfDocumentStore.delete(storageName)
+                }
+                runCatching { deleteUnusedImageAssets(deleted.imageStorageNames) }
+                clearPageRuntimeState()
+                viewportState.update { it - command.created.page.id }
+                selectionState.value = CanvasSelection()
+            }
         }
     }
 
@@ -869,6 +1227,9 @@ class CanvasViewModel(
                 }
             }
             is CanvasOperation.AddText -> Unit
+            is CanvasOperation.AddAiText -> {
+                aiAssistantSession.update { it.copy(isInserting = false) }
+            }
             is CanvasOperation.ImportImage -> Unit
             is CanvasOperation.TransformSelection -> selectionState.value = operation.change.before
             is CanvasOperation.DeleteSelection -> selectionState.value = operation.selection
@@ -877,6 +1238,9 @@ class CanvasViewModel(
                 _exportState.value = ExportUiState.Error()
             }
             is CanvasOperation.CreatePage -> Unit
+            is CanvasOperation.CreatePageWithAiText -> {
+                aiAssistantSession.update { it.copy(isInserting = false) }
+            }
             is CanvasOperation.DeletePage -> Unit
             is CanvasOperation.ReorderPages -> Unit
             is CanvasOperation.RestoreVersion -> Unit
@@ -896,6 +1260,10 @@ class CanvasViewModel(
             is CanvasCommand.ElementsAdded -> Unit
             is CanvasCommand.ElementsDeleted -> Unit
             is CanvasCommand.ElementsTransformed -> selectionState.value = command.after
+            is CanvasCommand.PageWithTextAdded -> {
+                selectionState.value = CanvasSelection(texts = listOf(command.created.text))
+                selectedPageId.value = command.created.page.id
+            }
             null -> Unit
         }
     }
@@ -911,6 +1279,10 @@ class CanvasViewModel(
             is CanvasCommand.ElementsAdded -> Unit
             is CanvasCommand.ElementsDeleted -> Unit
             is CanvasCommand.ElementsTransformed -> selectionState.value = command.before
+            is CanvasCommand.PageWithTextAdded -> {
+                selectionState.value = CanvasSelection()
+                selectedPageId.value = command.previousPageId
+            }
             null -> Unit
         }
     }
@@ -959,16 +1331,22 @@ class CanvasViewModel(
         is CanvasOperation.Erase -> targets.firstOrNull()?.pageId()
         is CanvasOperation.AreaErase -> replacements.firstOrNull()?.target?.pageId()
         is CanvasOperation.AddText -> pageId
+        is CanvasOperation.AddAiText -> pageId
         is CanvasOperation.ImportImage -> pageId
         is CanvasOperation.TransformSelection -> change.before.pageId() ?: change.after.pageId()
         is CanvasOperation.DeleteSelection -> selection.pageId()
         is CanvasOperation.PasteSelection -> pageId
         is CanvasOperation.RestoreVersion -> null
         is CanvasOperation.ExportPage, is CanvasOperation.ExportPdf,
-        is CanvasOperation.CreatePage, is CanvasOperation.DeletePage,
+        is CanvasOperation.CreatePage, is CanvasOperation.CreatePageWithAiText,
+        is CanvasOperation.DeletePage,
         is CanvasOperation.ReorderPages -> null
-        is CanvasOperation.Undo -> undoStack.peekLast()?.pageId()
-        is CanvasOperation.Redo -> redoStack.peekLast()?.pageId()
+        is CanvasOperation.Undo -> undoStack.peekLast()
+            ?.takeUnless { it is CanvasCommand.PageWithTextAdded }
+            ?.pageId()
+        is CanvasOperation.Redo -> redoStack.peekLast()
+            ?.takeUnless { it is CanvasCommand.PageWithTextAdded }
+            ?.pageId()
     }
 
     private fun ErasableStroke.pageId(): Long = when (this) {
@@ -993,18 +1371,32 @@ class CanvasViewModel(
             ?: texts.firstOrNull()?.pageId ?: images.firstOrNull()?.pageId
         is CanvasCommand.ElementsDeleted -> selection.pageId()
         is CanvasCommand.ElementsTransformed -> after.pageId()
+        is CanvasCommand.PageWithTextAdded -> created.page.id
+    }
+
+    private fun CanvasCommand.imageStorageNames(): List<String> = when (this) {
+        is CanvasCommand.ElementsAdded -> images.map(CanvasImage::storageName)
+        is CanvasCommand.ElementsDeleted -> selection.images.map(CanvasImage::storageName)
+        is CanvasCommand.ElementsTransformed ->
+            (before.images + after.images).map(CanvasImage::storageName)
+        is CanvasCommand.AddStroke,
+        is CanvasCommand.DeleteStrokes,
+        is CanvasCommand.ReplaceStrokes,
+        is CanvasCommand.PageWithTextAdded -> emptyList()
     }
 
     private fun CanvasSelection.pageId(): Long? = strokes.firstOrNull()?.pageId
         ?: texts.firstOrNull()?.pageId ?: images.firstOrNull()?.pageId
 
     override fun onCleared() {
+        cancelAiGeneration(updateState = false)
         operationQueue.close()
         super.onCleared()
     }
 
     private sealed interface CanvasOperation {
         val enqueuedAt: Long
+        sealed interface PageOperation : CanvasOperation
 
         data class Add(
             val stroke: PendingCanvasStroke,
@@ -1015,6 +1407,11 @@ class CanvasViewModel(
         data class Erase(val targets: List<ErasableStroke>, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
         data class AreaErase(val replacements: List<AreaEraseReplacement>, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
         data class AddText(val draft: CanvasTextDraft, val pageId: Long, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class AddAiText(
+            val draft: CanvasTextDraft,
+            val pageId: Long,
+            override val enqueuedAt: Long = System.currentTimeMillis(),
+        ) : PageOperation
         data class ImportImage(
             val uri: Uri,
             val pageId: Long,
@@ -1038,13 +1435,22 @@ class CanvasViewModel(
             override val enqueuedAt: Long = System.currentTimeMillis(),
         ) : CanvasOperation
         data class ExportPdf(val note: Note, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
-        sealed interface PageOperation : CanvasOperation
-        data class CreatePage(val template: PageTemplate, override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
+        data class CreatePage(
+            val template: PageTemplate,
+            var createdPageId: Long? = null,
+            override val enqueuedAt: Long = System.currentTimeMillis(),
+        ) : PageOperation
+        data class CreatePageWithAiText(
+            val draft: CanvasTextDraft,
+            val previousPageId: Long,
+            var created: CreatedPageText? = null,
+            override val enqueuedAt: Long = System.currentTimeMillis(),
+        ) : PageOperation
         data class DeletePage(val pageId: Long, val nextPageId: Long?, override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
         data class ReorderPages(val pageIds: List<Long>, override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
         data class RestoreVersion(val versionId: Long, val pageId: Long, override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
-        data class Undo(override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
-        data class Redo(override val enqueuedAt: Long = System.currentTimeMillis()) : CanvasOperation
+        data class Undo(override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
+        data class Redo(override val enqueuedAt: Long = System.currentTimeMillis()) : PageOperation
     }
 
     private sealed interface CanvasCommand {
@@ -1060,6 +1466,10 @@ class CanvasViewModel(
         data class ElementsTransformed(
             val before: CanvasSelection,
             val after: CanvasSelection,
+        ) : CanvasCommand
+        data class PageWithTextAdded(
+            var created: CreatedPageText,
+            val previousPageId: Long,
         ) : CanvasCommand
     }
 
@@ -1078,6 +1488,7 @@ class CanvasViewModel(
         private val canvasImageStore: CanvasImageStore,
         private val recoveryJournal: RecoveryJournal,
         private val pageVersionService: PageVersionService,
+        private val onDeviceAiRepository: OnDeviceAiRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -1085,7 +1496,7 @@ class CanvasViewModel(
                 noteId, repository, settingsStore, customColorPaletteStore,
                 thumbnailStore, thumbnailService, exportService,
                 pdfDocumentStore, pdfPageRenderStore, canvasImageStore,
-                recoveryJournal, pageVersionService,
+                recoveryJournal, pageVersionService, onDeviceAiRepository,
             ) as T
     }
 
@@ -1094,5 +1505,15 @@ class CanvasViewModel(
         const val DEFAULT_IMAGE_WIDTH = 0.45f
         const val MINIMUM_IMAGE_SIZE = 0.08f
         const val MAXIMUM_IMAGE_HEIGHT = 0.65f
+        const val AI_TEXT_WIDTH = 0.7f
+        const val AI_TEXT_VERTICAL_OFFSET = 0.08f
+        const val MAXIMUM_AI_CONTEXT_LENGTH = 12_000
+        const val AI_CONTEXT_SEPARATOR = "\n\n"
+        const val AI_ASSISTANT_INSTRUCTION =
+            "당신은 NoteUp의 온디바이스 노트 도우미입니다. 간결하고 정확한 한국어로 답하세요."
+        const val AI_CONTEXT_HEADER = "\n\n선택한 노트 문맥:\n---\n"
+        const val AI_CONTEXT_FOOTER = "\n---"
+        const val AI_QUESTION_HEADER = "\n\n사용자 요청:\n"
+        const val AI_ANSWER_INSTRUCTION = "\n\n노트에 바로 넣을 수 있는 답변 본문만 작성하세요."
     }
 }

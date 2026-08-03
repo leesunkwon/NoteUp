@@ -19,6 +19,7 @@ import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.CanvasImage
 import com.kotlinsun.noteup.domain.model.CanvasImageDraft
 import com.kotlinsun.noteup.domain.model.CopiedCanvasElements
+import com.kotlinsun.noteup.domain.model.CreatedPageText
 import com.kotlinsun.noteup.domain.model.Note
 import com.kotlinsun.noteup.domain.model.Notebook
 import com.kotlinsun.noteup.domain.model.Page
@@ -239,6 +240,70 @@ class LocalNoteRepository(
             )
             touchPageAndNote(noteId, pageId, now)
             pageId
+        }
+
+    override suspend fun createPageWithText(
+        noteId: Long,
+        template: PageTemplate,
+        draft: CanvasTextDraft,
+    ): CreatedPageText = database.withTransaction {
+        val now = System.currentTimeMillis()
+        val pageEntity = PageEntity(
+            noteId = noteId,
+            pageIndex = pageDao.nextPageIndex(noteId),
+            templateType = template.name,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val pageId = pageDao.insert(pageEntity)
+        val textEntity = CanvasTextEntity(
+            pageId = pageId,
+            elementIndex = 0,
+            x = draft.x,
+            y = draft.y,
+            boxWidth = draft.boxWidth,
+            content = draft.content,
+            colorArgb = draft.colorArgb,
+            textSizeSp = draft.textSizeSp,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val text = textEntity.copy(id = canvasTextDao.insert(textEntity)).toDomain()
+        touchPageAndNote(noteId, pageId, now)
+        CreatedPageText(
+            page = Page(
+                id = pageId,
+                noteId = noteId,
+                pageIndex = pageEntity.pageIndex,
+                templateType = template,
+                createdAt = now,
+                updatedAt = now,
+            ),
+            text = text,
+        )
+    }
+
+    override suspend fun restorePageWithText(value: CreatedPageText): CreatedPageText =
+        database.withTransaction {
+            require(value.page.pdfBackground == null)
+            val now = System.currentTimeMillis()
+            val page = value.page.copy(updatedAt = now)
+            val text = value.text.copy(pageId = page.id, updatedAt = now)
+            val pageId = pageDao.insert(
+                PageEntity(
+                    id = page.id,
+                    noteId = page.noteId,
+                    pageIndex = page.pageIndex,
+                    templateType = page.templateType.name,
+                    createdAt = page.createdAt,
+                    updatedAt = page.updatedAt,
+                ),
+            )
+            check(pageId == page.id)
+            val textId = canvasTextDao.insert(text.toEntity())
+            check(textId == text.id)
+            touchPageAndNote(page.noteId, page.id, now)
+            CreatedPageText(page, text)
         }
 
     override suspend fun updatePageTemplate(pageId: Long, template: PageTemplate) {

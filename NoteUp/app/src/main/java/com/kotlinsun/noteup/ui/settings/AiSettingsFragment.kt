@@ -183,7 +183,10 @@ class AiSettingsFragment : Fragment() {
                 modelState is AiModelState.Downloading ||
                 modelState is AiModelState.Verifying)
         aiModelTestButton.isVisible = !state.aiModelDeleting && modelState is AiModelState.Ready
-        aiModelTestButton.isEnabled = testRunning || state.aiEngineState !is AiEngineState.Loading
+        aiModelTestButton.isEnabled = testRunning || (
+            state.aiEngineState !is AiEngineState.Loading &&
+                state.aiEngineState !is AiEngineState.Generating
+        )
         aiModelTestButton.setText(
             if (testRunning) R.string.ai_model_test_cancel else R.string.ai_model_test,
         )

@@ -11,6 +11,7 @@ import com.kotlinsun.noteup.domain.model.CanvasTextDraft
 import com.kotlinsun.noteup.domain.model.CanvasImage
 import com.kotlinsun.noteup.domain.model.CanvasImageDraft
 import com.kotlinsun.noteup.domain.model.CopiedCanvasElements
+import com.kotlinsun.noteup.domain.model.CreatedPageText
 import com.kotlinsun.noteup.domain.model.DeletedAssets
 import com.kotlinsun.noteup.domain.model.PdfImportPage
 import com.kotlinsun.noteup.domain.model.PageVersion
@@ -55,6 +56,12 @@ interface NoteRepository {
     suspend fun getReferencedPdfStorageNames(): Set<String>
     suspend fun getReferencedImageStorageNames(): Set<String>
     suspend fun createPage(noteId: Long, template: PageTemplate): Long
+    suspend fun createPageWithText(
+        noteId: Long,
+        template: PageTemplate,
+        draft: CanvasTextDraft,
+    ): CreatedPageText
+    suspend fun restorePageWithText(value: CreatedPageText): CreatedPageText
     suspend fun updatePageTemplate(pageId: Long, template: PageTemplate)
     suspend fun deletePage(noteId: Long, pageId: Long): DeletedAssets
     suspend fun reorderPages(noteId: Long, orderedPageIds: List<Long>)
