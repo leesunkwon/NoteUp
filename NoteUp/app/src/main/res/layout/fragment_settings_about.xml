@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/noteup_bg_layer_default"
+    android:paddingHorizontal="@dimen/screen_content_padding"
+    android:paddingTop="@dimen/spacing_medium"
+    tools:context=".ui.settings.AboutSettingsFragment">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/back_button"
+        style="@style/Widget.NoteUp.Button.IconUtility"
+        android:layout_width="@dimen/control_height"
+        android:layout_height="@dimen/control_height"
+        android:contentDescription="@string/back"
+        app:icon="@drawable/ic_arrow_back"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/settings_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_small"
+        android:text="@string/settings_category_about"
+        android:textAppearance="@style/TextAppearance.NoteUp.ScreenTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/back_button"
+        app:layout_constraintTop_toTopOf="@id/back_button" />
+
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/settings_header_bottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="bottom"
+        app:constraint_referenced_ids="back_button,settings_title" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:paddingBottom="@dimen/spacing_extra_large"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/settings_header_bottom"
+        app:layout_constraintWidth_max="@dimen/settings_content_max_width">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/getting_started_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_large"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_medium">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/restart_getting_started_title"
+                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:text="@string/restart_getting_started_description"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/reset_settings_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="vertical"
+                android:padding="@dimen/spacing_medium">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/reset_settings_title"
+                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
+                    android:textColor="@color/noteup_fg_critical" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_extra_small"
+                    android:text="@string/reset_settings_description"
+                    android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/app_version"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:paddingHorizontal="@dimen/spacing_medium"
+                android:textAppearance="@style/TextAppearance.NoteUp.Body" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.constraintlayout.widget.ConstraintLayout>

@@ -16,7 +16,14 @@ class NoteUpApplication : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) container.trimMemory()
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            container.trimMemory(level)
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        container.trimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
     }
 }
 

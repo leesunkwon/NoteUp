@@ -56,184 +56,58 @@
             android:orientation="vertical">
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_large"
-                android:layout_marginBottom="@dimen/spacing_small"
-                android:text="@string/settings_section_display"
-                android:textAppearance="@style/TextAppearance.NoteUp.Label"
-                android:textColor="@color/noteup_fg_brand" />
+                android:layout_marginBottom="@dimen/spacing_medium"
+                android:text="@string/settings_overview_description"
+                android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
 
             <LinearLayout
-                android:id="@+id/theme_mode_row"
+                android:id="@+id/display_settings_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_settings_row"
                 android:clickable="true"
                 android:focusable="true"
+                android:gravity="center_vertical"
                 android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
+                android:orientation="horizontal"
                 android:padding="@dimen/spacing_medium">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="@string/theme_mode_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/theme_mode_summary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                    tools:text="@string/theme_mode_system" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_category_display"
+                        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                    <TextView
+                        android:id="@+id/display_settings_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_extra_small"
+                        android:text="@string/settings_category_display_description"
+                        android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:padding="@dimen/toolbar_icon_padding"
+                    app:srcCompat="@drawable/ic_chevron_right"
+                    app:tint="@color/noteup_control_text" />
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/canvas_appearance_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_small"
-                android:background="@drawable/bg_settings_row"
-                android:clickable="true"
-                android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/canvas_appearance_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
-
-                <TextView
-                    android:id="@+id/canvas_appearance_summary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                    tools:text="@string/canvas_appearance_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:text="@string/canvas_appearance_description"
-                    android:textAppearance="@style/TextAppearance.NoteUp.CaptionSmall" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_large"
-                android:layout_marginBottom="@dimen/spacing_small"
-                android:text="@string/settings_section_writing"
-                android:textAppearance="@style/TextAppearance.NoteUp.Label"
-                android:textColor="@color/noteup_fg_brand" />
-
-            <LinearLayout
-                android:id="@+id/default_template_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_settings_row"
-                android:clickable="true"
-                android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/default_template_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
-
-                <TextView
-                    android:id="@+id/default_template_summary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                    tools:text="@string/template_blank" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/canvas_input_mode_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_small"
-                android:background="@drawable/bg_settings_row"
-                android:clickable="true"
-                android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/canvas_input_mode_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
-
-                <TextView
-                    android:id="@+id/canvas_input_mode_summary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                    tools:text="@string/canvas_input_mode_stylus_only" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:text="@string/canvas_input_mode_description"
-                    android:textAppearance="@style/TextAppearance.NoteUp.CaptionSmall" />
-            </LinearLayout>
-
-            <include
-                android:id="@+id/behavior_section"
-                layout="@layout/view_settings_behavior_section" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_large"
-                android:layout_marginBottom="@dimen/spacing_small"
-                android:text="@string/settings_section_storage"
-                android:textAppearance="@style/TextAppearance.NoteUp.Label"
-                android:textColor="@color/noteup_fg_brand" />
-
-            <LinearLayout
-                android:id="@+id/trash_retention_card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_settings_row"
-                android:clickable="true"
-                android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/trash_retention_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
-
-                <TextView
-                    android:id="@+id/trash_retention_summary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                    tools:text="@string/trash_retention_30_days" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/version_history_row"
+                android:id="@+id/writing_settings_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_small"
@@ -254,130 +128,159 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/version_history_settings_title"
+                        android:text="@string/settings_category_writing"
                         android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
 
                     <TextView
-                        android:id="@+id/version_history_summary"
+                        android:id="@+id/writing_settings_summary"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/spacing_extra_small"
-                        android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                        tools:text="페이지당 최근 20개 보관" />
+                        android:text="@string/settings_category_writing_description"
+                        android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
                 </LinearLayout>
 
-                <com.google.android.material.materialswitch.MaterialSwitch
-                    android:id="@+id/version_history_switch"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="@string/version_history_settings_title" />
+                <ImageView
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:padding="@dimen/toolbar_icon_padding"
+                    app:srcCompat="@drawable/ic_chevron_right"
+                    app:tint="@color/noteup_control_text" />
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/clear_cache_row"
+                android:id="@+id/ai_settings_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_small"
                 android:background="@drawable/bg_settings_row"
                 android:clickable="true"
                 android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/storage_usage_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
-
-                <TextView
-                    android:id="@+id/storage_usage_summary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption"
-                    tools:text="사용 중 12 MB · 정리 가능 3 MB" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:text="@string/clear_cache_description"
-                    android:textAppearance="@style/TextAppearance.NoteUp.CaptionSmall" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/reset_settings_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_small"
-                android:background="@drawable/bg_settings_row"
-                android:clickable="true"
-                android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/reset_settings_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong"
-                    android:textColor="@color/noteup_fg_critical" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:text="@string/reset_settings_description"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_large"
-                android:layout_marginBottom="@dimen/spacing_small"
-                android:text="@string/settings_section_app"
-                android:textAppearance="@style/TextAppearance.NoteUp.Label"
-                android:textColor="@color/noteup_fg_brand" />
-
-            <LinearLayout
-                android:id="@+id/getting_started_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_settings_row"
-                android:clickable="true"
-                android:focusable="true"
-                android:minHeight="@dimen/settings_row_min_height"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_medium">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/restart_getting_started_title"
-                    android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_extra_small"
-                    android:text="@string/restart_getting_started_description"
-                    android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/app_version"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_settings_row"
-                android:layout_marginTop="@dimen/spacing_small"
                 android:gravity="center_vertical"
                 android:minHeight="@dimen/settings_row_min_height"
-                android:paddingHorizontal="@dimen/spacing_medium"
-                android:textAppearance="@style/TextAppearance.NoteUp.Body" />
+                android:orientation="horizontal"
+                android:padding="@dimen/spacing_medium">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_category_ai"
+                        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                    <TextView
+                        android:id="@+id/ai_settings_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_extra_small"
+                        android:text="@string/settings_category_ai_description"
+                        android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:padding="@dimen/toolbar_icon_padding"
+                    app:srcCompat="@drawable/ic_chevron_right"
+                    app:tint="@color/noteup_control_text" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/storage_settings_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="horizontal"
+                android:padding="@dimen/spacing_medium">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_category_storage"
+                        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                    <TextView
+                        android:id="@+id/storage_settings_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_extra_small"
+                        android:text="@string/settings_category_storage_description"
+                        android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:padding="@dimen/toolbar_icon_padding"
+                    app:srcCompat="@drawable/ic_chevron_right"
+                    app:tint="@color/noteup_control_text" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/about_settings_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_small"
+                android:background="@drawable/bg_settings_row"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/settings_row_min_height"
+                android:orientation="horizontal"
+                android:padding="@dimen/spacing_medium">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_category_about"
+                        android:textAppearance="@style/TextAppearance.NoteUp.BodyStrong" />
+
+                    <TextView
+                        android:id="@+id/about_settings_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_extra_small"
+                        android:text="@string/settings_category_about_description"
+                        android:textAppearance="@style/TextAppearance.NoteUp.Caption" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="@dimen/control_height"
+                    android:layout_height="@dimen/control_height"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:padding="@dimen/toolbar_icon_padding"
+                    app:srcCompat="@drawable/ic_chevron_right"
+                    app:tint="@color/noteup_control_text" />
+            </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -25,6 +25,12 @@ import com.kotlinsun.noteup.data.recovery.RecoveryService
 import com.kotlinsun.noteup.data.version.PageSnapshotStore
 import com.kotlinsun.noteup.data.version.PageVersionService
 import com.kotlinsun.noteup.data.storage.StorageUsageService
+import com.kotlinsun.noteup.data.ai.AiModelManager
+import com.kotlinsun.noteup.data.ai.AiModelCatalog
+import com.kotlinsun.noteup.data.ai.LiteRtOnDeviceAiEngine
+import com.kotlinsun.noteup.data.ai.LocalOnDeviceAiRepository
+import com.kotlinsun.noteup.domain.ai.OnDeviceAiRepository
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -89,6 +95,16 @@ class AppContainer(
     val drawingToolSettingsStore = DrawingToolSettingsStore(context)
     val customColorPaletteStore = CustomColorPaletteStore(context)
     val onboardingPreferencesStore = OnboardingPreferencesStore(context)
+    private val aiModelManager = AiModelManager(context)
+    private val onDeviceAiEngine = LiteRtOnDeviceAiEngine(
+        modelPathProvider = aiModelManager::readyModelPath,
+        cacheDir = File(context.cacheDir, AiModelCatalog.ENGINE_CACHE_DIRECTORY_NAME),
+    )
+    val onDeviceAiRepository: OnDeviceAiRepository = LocalOnDeviceAiRepository(
+        context = context,
+        modelManager = aiModelManager,
+        engine = onDeviceAiEngine,
+    )
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
@@ -109,5 +125,8 @@ class AppContainer(
         const val RECOVERY_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000
     }
 
-    fun trimMemory() = storageUsageService.trimMemory()
+    fun trimMemory(level: Int) {
+        storageUsageService.trimMemory()
+        onDeviceAiRepository.trimMemory(level)
+    }
 }
