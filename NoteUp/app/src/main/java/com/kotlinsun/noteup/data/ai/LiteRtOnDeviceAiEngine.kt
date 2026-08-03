@@ -4,6 +4,8 @@ import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import com.kotlinsun.noteup.domain.ai.AiEngineState
 import com.kotlinsun.noteup.domain.ai.OnDeviceAiEngine
 import java.io.File
@@ -14,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -71,8 +74,33 @@ class LiteRtOnDeviceAiEngine(
                     activeConversation = conversation
                     _state.value = AiEngineState.Generating
                     try {
-                        conversation.sendMessageAsync(prompt).collect { message ->
-                            emit(message.toString())
+                        // LiteRT-LM 0.15.0의 Flow 어댑터는 완료 콜백에서 런타임에
+                        // 존재하지 않는 SendChannel.close$default를 호출하므로 콜백 API를 사용한다.
+                        val responseChannel = Channel<Message>(Channel.BUFFERED)
+                        try {
+                            conversation.sendMessageAsync(
+                                prompt,
+                                object : MessageCallback {
+                                    override fun onMessage(message: Message) {
+                                        responseChannel.trySend(message)
+                                    }
+
+                                    override fun onDone() {
+                                        responseChannel.close(null)
+                                    }
+
+                                    override fun onError(throwable: Throwable) {
+                                        responseChannel.close(throwable)
+                                    }
+                                },
+                                emptyMap(),
+                            )
+
+                            for (message in responseChannel) {
+                                emit(message.toString())
+                            }
+                        } finally {
+                            responseChannel.cancel(null)
                         }
                     } catch (cancellation: CancellationException) {
                         cancelConversation(conversation)
