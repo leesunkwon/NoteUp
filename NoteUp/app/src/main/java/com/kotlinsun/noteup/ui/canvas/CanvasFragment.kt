@@ -526,7 +526,7 @@ class CanvasFragment : Fragment() {
         }
     }
 
-    private fun render(state: CanvasUiState) = with(binding) {
+    private fun render(state: CanvasUiState): Unit = with(binding) {
         currentState = state
         loadingIndicator.isVisible = state == CanvasUiState.Loading
         notFoundState.isVisible = state == CanvasUiState.NotFound
@@ -1739,7 +1739,7 @@ class CanvasFragment : Fragment() {
         )
     }
 
-    private fun beginInlineTextEditing(session: InlineTextSession) = with(binding) {
+    private fun beginInlineTextEditing(session: InlineTextSession): Unit = with(binding) {
         inlineTextSession = session
         viewModel.closeAiAssistant()
         hideAiKeyboard()
