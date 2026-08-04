@@ -78,6 +78,9 @@
     <dimen name="tool_popup_width">312dp</dimen>
     <dimen name="tool_popup_corner_radius">16dp</dimen>
     <dimen name="tool_popup_elevation">8dp</dimen>
+    <dimen name="inline_text_editor_default_width">240dp</dimen>
+    <dimen name="inline_text_editor_min_width">96dp</dimen>
+    <dimen name="inline_text_editor_padding">8dp</dimen>
     <dimen name="tool_popup_vertical_offset">4dp</dimen>
     <dimen name="tool_current_swatch_size">16dp</dimen>
     <dimen name="tool_swatch_check_size">16dp</dimen>
