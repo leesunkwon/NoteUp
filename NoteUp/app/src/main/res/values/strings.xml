@@ -338,4 +338,6 @@
     <string name="recovery_complete">필기 %1$d개를 복구했습니다.</string>
     <string name="discard">버리기</string>
     <string name="keyboard_shortcuts_description">Ctrl 또는 Command + Z: 실행 취소\nCtrl 또는 Command + Shift + Z, Ctrl 또는 Command + Y: 다시 실행\nP: 둘러보기 도구\n1~5: 펜, 형광펜, 지우개, 올가미, 텍스트\n[ / ]: 이전·다음 페이지\n- / 0 / +: 축소·초기화·확대\nDelete 또는 Backspace: 선택 요소 삭제\nEsc: 진행 중인 작업과 선택 취소</string>
+    <string name="inline_text_editor_description">캔버스 텍스트 편집, 바깥 영역을 눌러 저장</string>
+    <string name="inline_text_editing_started">텍스트를 캔버스에서 바로 편집합니다. 바깥 영역을 누르면 저장됩니다.</string>
 </resources>

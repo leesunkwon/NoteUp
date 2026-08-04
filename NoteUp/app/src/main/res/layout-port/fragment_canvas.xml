@@ -214,6 +214,38 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/canvas_toolbar" />
 
+    <View
+        android:id="@+id/inline_text_scrim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:importantForAccessibility="no"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/drawing_canvas"
+        app:layout_constraintEnd_toEndOf="@id/drawing_canvas"
+        app:layout_constraintStart_toStartOf="@id/drawing_canvas"
+        app:layout_constraintTop_toTopOf="@id/drawing_canvas" />
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/inline_text_editor"
+        android:layout_width="@dimen/inline_text_editor_default_width"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_inline_text_editor"
+        android:contentDescription="@string/inline_text_editor_description"
+        android:elevation="@dimen/tool_popup_elevation"
+        android:gravity="start|top"
+        android:includeFontPadding="false"
+        android:inputType="textCapSentences|textMultiLine"
+        android:maxLines="12"
+        android:minHeight="@dimen/control_height"
+        android:minLines="1"
+        android:padding="@dimen/inline_text_editor_padding"
+        android:scrollbars="vertical"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="@id/drawing_canvas"
+        app:layout_constraintTop_toTopOf="@id/drawing_canvas" />
+
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/selection_actions_bar"
         android:layout_width="wrap_content"

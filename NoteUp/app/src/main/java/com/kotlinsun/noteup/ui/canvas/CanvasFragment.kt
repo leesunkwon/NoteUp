@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
@@ -17,6 +19,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.ImageView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.PopupMenu
@@ -42,8 +45,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import com.kotlinsun.noteup.NoteUpApplication
 import com.kotlinsun.noteup.R
 import com.kotlinsun.noteup.databinding.FragmentCanvasBinding
@@ -121,6 +122,11 @@ class CanvasFragment : Fragment() {
     private var renderingAiPrompt = false
     private var renderedAiResponse: String? = null
     private var renderedAiPanelVisible = false
+    private var inlineTextSession: InlineTextSession? = null
+    private var pendingInlineTextCommit: PendingInlineTextCommit? = null
+    private var renderingInlineText = false
+    private var inlineEditorBackgroundColor: Int? = null
+    private var inlineTextBackCallback: OnBackPressedCallback? = null
     private val aiResponseAutoScroll = Runnable {
         _binding?.aiAssistantContent?.aiResponseScroll?.fullScroll(View.FOCUS_DOWN)
     }
@@ -188,7 +194,11 @@ class CanvasFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         pagePanelOpen = savedInstanceState?.getBoolean(PAGE_PANEL_OPEN_KEY) ?: pagePanelOpen
-        binding.backButton.setOnClickListener { findNavController().popBackStack() }
+        restoreInlineTextSession(savedInstanceState)
+        binding.backButton.setOnClickListener {
+            if (inlineTextSession != null) cancelInlineTextEditing()
+            else findNavController().popBackStack()
+        }
         binding.drawingCanvas.onStrokeCompleted = viewModel::addStroke
         binding.drawingCanvas.onStrokesErased = viewModel::eraseStrokes
         binding.drawingCanvas.onAreaErased = viewModel::eraseArea
@@ -196,18 +206,20 @@ class CanvasFragment : Fragment() {
             viewModel.updateViewport(viewport)
             renderZoomControls(viewport.scale)
             positionSelectionActions()
+            positionInlineTextEditor()
             (currentState as? CanvasUiState.Ready)?.let {
                 renderPdfBackground(it.page, viewport.scale, debounce = true)
             }
         }
         binding.drawingCanvas.onCanvasSizeChanged = { _, _ ->
             positionSelectionActions()
+            positionInlineTextEditor()
             (currentState as? CanvasUiState.Ready)?.let {
                 renderPdfBackground(it.page, it.viewport.scale, force = true)
             }
         }
-        binding.drawingCanvas.onTextRequested = ::showNewTextDialog
-        binding.drawingCanvas.onTextEditRequested = ::showEditTextDialog
+        binding.drawingCanvas.onTextRequested = ::startNewInlineTextEditing
+        binding.drawingCanvas.onTextEditRequested = ::startInlineTextEditing
         binding.drawingCanvas.onSelectionChanged = viewModel::updateSelection
         binding.drawingCanvas.onSelectionTransformed = viewModel::transformSelection
         binding.drawingCanvas.onPageSwipe = { direction ->
@@ -218,10 +230,14 @@ class CanvasFragment : Fragment() {
             performHapticFeedback()
         }
         setupToolbar()
+        setupInlineTextEditor()
         setupPagePanel()
         setupAiAssistantPanel()
         binding.pagePanel.isVisible = pagePanelOpen
         observeState()
+        inlineTextBackCallback = object : OnBackPressedCallback(inlineTextSession != null) {
+            override fun handleOnBackPressed() = cancelInlineTextEditing()
+        }.also { requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, it) }
     }
 
     private fun setupToolbar() = with(binding) {
@@ -254,7 +270,7 @@ class CanvasFragment : Fragment() {
             deleteCurrentSelection()
         }
         editTextButton.setOnClickListener {
-            drawingCanvas.currentSelection().texts.singleOrNull()?.let(::showEditTextDialog)
+            drawingCanvas.currentSelection().texts.singleOrNull()?.let(::startInlineTextEditing)
         }
         undoButton.setOnClickListener { viewModel.undo(); performHapticFeedback() }
         redoButton.setOnClickListener { viewModel.redo(); performHapticFeedback() }
@@ -278,6 +294,30 @@ class CanvasFragment : Fragment() {
         closePagePanelButton.setOnClickListener {
             pagePanelOpen = false
             pagePanel.isVisible = false
+        }
+    }
+
+    private fun setupInlineTextEditor() = with(binding) {
+        inlineTextScrim.setOnClickListener { commitInlineTextEditing() }
+        inlineTextEditor.doAfterTextChanged { editable ->
+            if (!renderingInlineText) {
+                inlineTextSession = inlineTextSession?.copy(content = editable?.toString().orEmpty())
+                inlineTextEditor.post(::positionInlineTextEditor)
+            }
+        }
+        inlineTextEditor.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when {
+                keyCode == KeyEvent.KEYCODE_ESCAPE -> {
+                    cancelInlineTextEditing()
+                    true
+                }
+                keyCode == KeyEvent.KEYCODE_ENTER && (event.isCtrlPressed || event.isMetaPressed) -> {
+                    commitInlineTextEditing()
+                    true
+                }
+                else -> false
+            }
         }
     }
 
@@ -337,6 +377,7 @@ class CanvasFragment : Fragment() {
                     panel.layoutParams = params
                 }
             }
+            binding.inlineTextEditor.post(::positionInlineTextEditor)
             insets
         }
         ViewCompat.requestApplyInsets(binding.root)
@@ -469,6 +510,12 @@ class CanvasFragment : Fragment() {
                 }
                 launch {
                     viewModel.errors.collect {
+                        val pending = pendingInlineTextCommit
+                        pendingInlineTextCommit = null
+                        binding.drawingCanvas.setInlineEditingTextId(null)
+                        pending?.let {
+                            beginInlineTextEditing(it.session.copy(content = it.content))
+                        }
                         Snackbar.make(binding.root, R.string.stroke_operation_error, Snackbar.LENGTH_SHORT).show()
                     }
                 }
@@ -479,7 +526,7 @@ class CanvasFragment : Fragment() {
         }
     }
 
-    private fun render(state: CanvasUiState) = with(binding) {
+    private fun render(state: CanvasUiState): Unit = with(binding) {
         currentState = state
         loadingIndicator.isVisible = state == CanvasUiState.Loading
         notFoundState.isVisible = state == CanvasUiState.NotFound
@@ -541,9 +588,21 @@ class CanvasFragment : Fragment() {
             if (drawingCanvas.currentSelection() != state.selection) {
                 drawingCanvas.syncSelection(state.selection)
             }
+            resolvePendingInlineTextCommit(state.texts)
+            val editing = inlineTextSession
+            if (editing != null) {
+                if (editing.pageId == state.page.id) {
+                    drawingCanvas.setInlineEditingTextId(editing.originalTextId)
+                    if (!inlineTextEditor.isVisible) beginInlineTextEditing(editing)
+                    else positionInlineTextEditor()
+                } else {
+                    cancelInlineTextEditing()
+                }
+            }
             renderZoomControls(
                 state.viewport.scale,
-                controlsEnabled = !state.isPageChanging && !state.isExporting,
+                controlsEnabled = !state.isPageChanging && !state.isExporting &&
+                    inlineTextSession == null && pendingInlineTextCommit == null,
             )
         } else {
             noteTitle.setTextIfChanged(getString(R.string.canvas_title))
@@ -562,7 +621,8 @@ class CanvasFragment : Fragment() {
     private fun renderZoomControls(
         scale: Float,
         controlsEnabled: Boolean = (currentState as? CanvasUiState.Ready)?.let {
-            !it.isPageChanging && !it.isExporting
+            !it.isPageChanging && !it.isExporting && inlineTextSession == null &&
+                pendingInlineTextCommit == null
         } == true,
     ) = with(binding) {
         val clampedScale = scale.coerceIn(MIN_ZOOM, MAX_ZOOM)
@@ -887,6 +947,20 @@ class CanvasFragment : Fragment() {
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount > 0 || _binding == null) {
             return false
         }
+        if (inlineTextSession != null) {
+            return when {
+                event.keyCode == KeyEvent.KEYCODE_ESCAPE -> {
+                    cancelInlineTextEditing()
+                    true
+                }
+                event.keyCode == KeyEvent.KEYCODE_ENTER &&
+                    (event.isCtrlPressed || event.isMetaPressed) -> {
+                    commitInlineTextEditing()
+                    true
+                }
+                else -> false
+            }
+        }
         val state = currentState as? CanvasUiState.Ready
         val commandModifier = event.isCtrlPressed || event.isMetaPressed
         if (commandModifier && event.keyCode == KeyEvent.KEYCODE_Z) {
@@ -979,6 +1053,10 @@ class CanvasFragment : Fragment() {
     }
 
     private fun cancelKeyboardInteraction() {
+        if (inlineTextSession != null) {
+            cancelInlineTextEditing()
+            return
+        }
         dismissToolSettingsPopup()
         binding.drawingCanvas.cancelActiveStroke()
         binding.drawingCanvas.clearSelection()
@@ -1098,6 +1176,12 @@ class CanvasFragment : Fragment() {
         toolSettingsButton.isVisible = settings.tool in TOOL_SETTINGS_TOOLS
         renderCurrentToolStyle(settings)
         toolSettingsBinding?.let { renderToolSettingsPanel(it, settings) }
+        val editingText = inlineTextSession != null || pendingInlineTextCommit != null
+        listOf(
+            pointerToolButton, penToolButton, highlighterToolButton, eraserToolButton,
+            lassoToolButton, shapeToolButton, textToolButton, toolSettingsButton,
+            pageListButton,
+        ).forEach { it.isEnabled = !editingText }
     }
 
     private fun renderSelectionActionsState() = with(binding) {
@@ -1110,12 +1194,14 @@ class CanvasFragment : Fragment() {
         val selection = drawingCanvas.currentSelection()
         val hasSingleTextSelection = settings.tool == DrawingTool.TEXT &&
             selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty()
-        val showSelectionActions = (isLasso && hasSelection) || hasSingleTextSelection
+        val showSelectionActions = inlineTextSession == null &&
+            ((isLasso && hasSelection) || hasSingleTextSelection)
         val renderState = SelectionActionsRenderState(
             showCopy = showSelectionActions,
             showPaste = isLasso && canPaste,
             showDelete = showSelectionActions,
-            showEdit = (isLasso || settings.tool == DrawingTool.TEXT) &&
+            showEdit = inlineTextSession == null &&
+                (isLasso || settings.tool == DrawingTool.TEXT) &&
                 selection.texts.size == 1 && selection.strokes.isEmpty() && selection.images.isEmpty(),
             enabled = !isBusy,
         )
@@ -1133,7 +1219,10 @@ class CanvasFragment : Fragment() {
 
     private fun renderHistoryControls(state: CanvasUiState.Ready) {
         val isTransientSave = state.isSaving && !state.isPageChanging && !state.isExporting
-        if (!isTransientSave) renderHistoryControls(state.canUndo, state.canRedo)
+        if (!isTransientSave) renderHistoryControls(
+            state.canUndo && inlineTextSession == null && pendingInlineTextCommit == null,
+            state.canRedo && inlineTextSession == null && pendingInlineTextCommit == null,
+        )
     }
 
     private fun renderHistoryControls(canUndo: Boolean, canRedo: Boolean) = with(binding) {
@@ -1147,7 +1236,8 @@ class CanvasFragment : Fragment() {
     }
 
     private fun renderPageControls(state: CanvasUiState.Ready) {
-        val controlsLocked = state.isPageChanging || state.isExporting
+        val controlsLocked = state.isPageChanging || state.isExporting ||
+            inlineTextSession != null || pendingInlineTextCommit != null
         renderPageControls(
             PageControlsRenderState(
                 canGoPrevious = !controlsLocked && state.pagePosition > 0,
@@ -1615,70 +1705,231 @@ class CanvasFragment : Fragment() {
         performHapticFeedback()
     }
 
-    private fun showNewTextDialog(x: Float, y: Float) {
-        showTextDialog(null) { content ->
-            viewModel.addText(
-                CanvasTextDraft(
-                    x = x.coerceAtMost(1f - DEFAULT_TEXT_WIDTH),
-                    y = y,
-                    boxWidth = DEFAULT_TEXT_WIDTH,
-                    content = content,
-                    colorArgb = currentSettings.pen.colorArgb,
-                    textSizeSp = currentSettings.textSize.sizeSp,
-                ),
+    private fun startNewInlineTextEditing(x: Float, y: Float) {
+        val state = currentState as? CanvasUiState.Ready ?: return
+        if (state.isBusy || state.isExporting || inlineTextSession != null) return
+        beginInlineTextEditing(
+            InlineTextSession(
+                pageId = state.page.id,
+                originalTextId = null,
+                x = x.coerceIn(0f, 1f - DEFAULT_TEXT_WIDTH),
+                y = y.coerceIn(0f, 1f),
+                boxWidth = DEFAULT_TEXT_WIDTH,
+                content = "",
+                colorArgb = currentSettings.pen.colorArgb,
+                textSizeSp = currentSettings.textSize.sizeSp,
+            ),
+        )
+    }
+
+    private fun startInlineTextEditing(text: CanvasText) {
+        val state = currentState as? CanvasUiState.Ready ?: return
+        if (state.isBusy || state.isExporting || text.pageId != state.page.id) return
+        beginInlineTextEditing(
+            InlineTextSession(
+                pageId = text.pageId,
+                originalTextId = text.id,
+                x = text.x,
+                y = text.y,
+                boxWidth = text.boxWidth,
+                content = text.content,
+                colorArgb = text.colorArgb,
+                textSizeSp = text.textSizeSp,
+            ),
+        )
+    }
+
+    private fun beginInlineTextEditing(session: InlineTextSession): Unit = with(binding) {
+        inlineTextSession = session
+        viewModel.closeAiAssistant()
+        hideAiKeyboard()
+        pagePanelOpen = false
+        pagePanel.isVisible = false
+        dismissToolSettingsPopup()
+        drawingCanvas.cancelActiveStroke()
+        drawingCanvas.setInlineEditingTextId(session.originalTextId)
+        inlineTextScrim.isVisible = true
+        inlineTextEditor.isVisible = true
+        renderingInlineText = true
+        inlineTextEditor.setText(session.content)
+        inlineTextEditor.setSelection(session.content.length)
+        renderingInlineText = false
+        inlineTextBackCallback?.isEnabled = true
+        renderedHistoryControls = null
+        renderedPageControls = null
+        renderedSelectionActions = null
+        renderToolSettingsState()
+        render(currentState)
+        inlineTextEditor.post {
+            positionInlineTextEditor()
+            inlineTextEditor.requestFocus()
+            (requireContext().getSystemService(InputMethodManager::class.java))
+                ?.showSoftInput(inlineTextEditor, InputMethodManager.SHOW_IMPLICIT)
+            inlineTextEditor.announceForAccessibility(
+                getString(R.string.inline_text_editing_started),
             )
         }
     }
 
-    private fun showEditTextDialog(text: CanvasText) {
-        showTextDialog(text.content) { content ->
-            if (content.isBlank()) {
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle(R.string.delete_text_title)
-                    .setMessage(R.string.delete_text_message)
-                    .setNegativeButton(R.string.cancel, null)
-                    .setPositiveButton(R.string.delete) { _, _ -> viewModel.editText(text, content) }
-                    .show()
-                    .applyCriticalPositiveAction()
-            } else viewModel.editText(text, content)
+    private fun positionInlineTextEditor() {
+        val session = inlineTextSession ?: return
+        val currentBinding = _binding ?: return
+        val canvas = currentBinding.drawingCanvas
+        if (canvas.width <= 0 || canvas.height <= 0) return
+        val placement = canvas.inlineTextEditorPlacement(
+            session.x,
+            session.y,
+            session.boxWidth,
+            session.textSizeSp,
+            session.colorArgb,
+        )
+        val editor = currentBinding.inlineTextEditor
+        val horizontalPadding = editor.paddingLeft + editor.paddingRight
+        val minimumWidth = resources.getDimensionPixelSize(R.dimen.inline_text_editor_min_width)
+            .coerceAtMost(canvas.width)
+        val maximumWidth = (canvas.width - horizontalPadding).coerceAtLeast(1)
+        val editorWidth = (placement.width.roundToInt() + horizontalPadding)
+            .coerceIn(minimumWidth.coerceAtMost(maximumWidth), maximumWidth)
+        if (editor.layoutParams.width != editorWidth) {
+            editor.layoutParams = editor.layoutParams.apply { width = editorWidth }
+            editor.requestLayout()
+        }
+        editor.setTextSize(TypedValue.COMPLEX_UNIT_PX, placement.textSizePx)
+        editor.setTextColor(placement.colorArgb)
+        if (inlineEditorBackgroundColor != placement.backgroundArgb) {
+            val padding = intArrayOf(
+                editor.paddingLeft,
+                editor.paddingTop,
+                editor.paddingRight,
+                editor.paddingBottom,
+            )
+            editor.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = resources.getDimension(R.dimen.seed_radius_r2)
+                setColor(placement.backgroundArgb)
+                setStroke(
+                    (2f * resources.displayMetrics.density).roundToInt(),
+                    requireContext().getColor(R.color.noteup_stroke_brand),
+                )
+            }
+            editor.setPadding(padding[0], padding[1], padding[2], padding[3])
+            inlineEditorBackgroundColor = placement.backgroundArgb
+        }
+        editor.post {
+            if (_binding == null || inlineTextSession !== session) return@post
+            val visibleFrame = Rect()
+            currentBinding.root.getWindowVisibleDisplayFrame(visibleFrame)
+            val canvasLocation = IntArray(2)
+            canvas.getLocationOnScreen(canvasLocation)
+            val visibleBottom = (visibleFrame.bottom - canvasLocation[1])
+                .coerceIn(0, canvas.height)
+            val maxX = (canvas.width - editor.width).coerceAtLeast(0).toFloat()
+            val maxY = (visibleBottom - editor.height).coerceAtLeast(0).toFloat()
+            editor.translationX = placement.left.coerceIn(0f, maxX)
+            editor.translationY = placement.top.coerceIn(0f, maxY)
         }
     }
 
-    private fun showTextDialog(initialValue: String?, onConfirm: (String) -> Unit) {
-        val input = TextInputEditText(requireContext()).apply {
-            minLines = 3
-            maxLines = 8
-            setText(initialValue.orEmpty())
-            setSelection(text?.length ?: 0)
-        }
-        val inputLayout = TextInputLayout(
-            requireContext(),
-            null,
-            com.google.android.material.R.attr.textInputStyle,
-        ).apply {
-            hint = getString(R.string.text_hint)
-            addView(input)
-            val padding = resources.getDimensionPixelSize(R.dimen.spacing_large)
-            setPadding(padding, 0, padding, 0)
-        }
-        val dialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(if (initialValue == null) R.string.enter_text else R.string.edit_text)
-            .setView(inputLayout)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save, null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val value = input.text?.toString().orEmpty()
-                if (value.isBlank() && initialValue == null) {
-                    inputLayout.error = getString(R.string.required_name_error)
-                } else {
-                    onConfirm(value)
-                    dialog.dismiss()
-                }
+    private fun commitInlineTextEditing() {
+        val session = inlineTextSession ?: return
+        val content = binding.inlineTextEditor.text?.toString().orEmpty()
+        val original = session.originalTextId?.let { id -> renderedTexts.firstOrNull { it.id == id } }
+        when {
+            session.originalTextId == null && content.isBlank() -> closeInlineTextEditing(true)
+            original == null && session.originalTextId != null -> cancelInlineTextEditing()
+            original != null && content == original.content -> closeInlineTextEditing(true)
+            original != null && content.isBlank() -> {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.delete_text_title)
+                    .setMessage(R.string.delete_text_message)
+                    .setNegativeButton(R.string.cancel) { _, _ ->
+                        binding.inlineTextEditor.requestFocus()
+                    }
+                    .setPositiveButton(R.string.delete) { _, _ ->
+                        saveInlineText(session, original, content)
+                    }
+                    .show()
+                    .applyCriticalPositiveAction()
             }
+            else -> saveInlineText(session, original, content)
         }
-        dialog.show()
+    }
+
+    private fun saveInlineText(
+        session: InlineTextSession,
+        original: CanvasText?,
+        content: String,
+    ) {
+        pendingInlineTextCommit = PendingInlineTextCommit(
+            textId = original?.id,
+            content = content,
+            session = session,
+            existingTextIds = renderedTexts.mapTo(hashSetOf(), CanvasText::id),
+        )
+        if (original == null) {
+            viewModel.addText(
+                CanvasTextDraft(
+                    session.x,
+                    session.y,
+                    session.boxWidth,
+                    content,
+                    session.colorArgb,
+                    session.textSizeSp,
+                ),
+            )
+        } else {
+            viewModel.editText(original, content)
+        }
+        closeInlineTextEditing(clearHiddenText = original == null)
+    }
+
+    private fun cancelInlineTextEditing() {
+        closeInlineTextEditing(clearHiddenText = true)
+    }
+
+    private fun closeInlineTextEditing(clearHiddenText: Boolean) {
+        val currentBinding = _binding ?: return
+        (requireContext().getSystemService(InputMethodManager::class.java))
+            ?.hideSoftInputFromWindow(currentBinding.inlineTextEditor.windowToken, 0)
+        currentBinding.inlineTextEditor.clearFocus()
+        currentBinding.inlineTextEditor.isVisible = false
+        currentBinding.inlineTextScrim.isVisible = false
+        inlineTextSession = null
+        inlineTextBackCallback?.isEnabled = false
+        if (clearHiddenText) currentBinding.drawingCanvas.setInlineEditingTextId(null)
+        renderedHistoryControls = null
+        renderedPageControls = null
+        renderedSelectionActions = null
+        renderToolSettingsState()
+        render(currentState)
+    }
+
+    private fun resolvePendingInlineTextCommit(texts: List<CanvasText>) {
+        val pending = pendingInlineTextCommit ?: return
+        val persisted = pending.textId?.let { id -> texts.firstOrNull { it.id == id } }
+        val completed = when {
+            pending.textId == null -> texts.any { text ->
+                text.id !in pending.existingTextIds &&
+                    text.pageId == pending.session.pageId &&
+                    text.content == pending.content &&
+                    text.x == pending.session.x && text.y == pending.session.y
+            }
+            pending.content.isBlank() -> persisted == null
+            else -> persisted?.content == pending.content
+        }
+        if (completed) {
+            pendingInlineTextCommit = null
+            binding.drawingCanvas.setInlineEditingTextId(null)
+            renderedHistoryControls = null
+            renderedPageControls = null
+            renderToolSettingsState()
+            (currentState as? CanvasUiState.Ready)?.let { state ->
+                renderHistoryControls(state)
+                renderPageControls(state)
+                renderZoomControls(state.viewport.scale)
+            }
+            updateInputEnabled()
+        }
     }
 
     private fun showPageTemplateDialog() {
@@ -1755,7 +2006,7 @@ class CanvasFragment : Fragment() {
     private fun updateInputEnabled() {
         val state = currentState as? CanvasUiState.Ready
         binding.drawingCanvas.isInputEnabled = state != null && !pdfPageLoading && !state.isPageChanging &&
-            !state.isExporting &&
+            !state.isExporting && inlineTextSession == null && pendingInlineTextCommit == null &&
             !(state.isBusy && currentSettings.tool in setOf(
                 DrawingTool.ERASER, DrawingTool.LASSO, DrawingTool.TEXT,
             ))
@@ -1881,6 +2132,7 @@ class CanvasFragment : Fragment() {
                         pdfRenderGeneration == generation
                     ) {
                         binding.drawingCanvas.setPdfBackground(result.bitmap)
+                        positionInlineTextEditor()
                         pdfDisplayedPageId = page.id
                         pdfPageLoading = false
                         updateInputEnabled()
@@ -1980,11 +2232,44 @@ class CanvasFragment : Fragment() {
         super.onStop()
     }
 
+    private fun restoreInlineTextSession(savedInstanceState: Bundle?) {
+        if (savedInstanceState == null ||
+            !savedInstanceState.containsKey(INLINE_TEXT_PAGE_ID_KEY)
+        ) return
+        inlineTextSession = InlineTextSession(
+            pageId = savedInstanceState.getLong(INLINE_TEXT_PAGE_ID_KEY),
+            originalTextId = savedInstanceState.getLong(INLINE_TEXT_ORIGINAL_ID_KEY)
+                .takeUnless { it == INVALID_TEXT_ID },
+            x = savedInstanceState.getFloat(INLINE_TEXT_X_KEY),
+            y = savedInstanceState.getFloat(INLINE_TEXT_Y_KEY),
+            boxWidth = savedInstanceState.getFloat(INLINE_TEXT_WIDTH_KEY, DEFAULT_TEXT_WIDTH),
+            content = savedInstanceState.getString(INLINE_TEXT_CONTENT_KEY).orEmpty(),
+            colorArgb = savedInstanceState.getInt(INLINE_TEXT_COLOR_KEY, Color.BLACK),
+            textSizeSp = savedInstanceState.getFloat(INLINE_TEXT_SIZE_KEY, TextSize.MEDIUM.sizeSp),
+        )
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(
             PAGE_PANEL_OPEN_KEY,
             _binding?.pagePanel?.isVisible ?: pagePanelOpen,
         )
+        inlineTextSession?.let { session ->
+            outState.putLong(INLINE_TEXT_PAGE_ID_KEY, session.pageId)
+            outState.putLong(
+                INLINE_TEXT_ORIGINAL_ID_KEY,
+                session.originalTextId ?: INVALID_TEXT_ID,
+            )
+            outState.putFloat(INLINE_TEXT_X_KEY, session.x)
+            outState.putFloat(INLINE_TEXT_Y_KEY, session.y)
+            outState.putFloat(INLINE_TEXT_WIDTH_KEY, session.boxWidth)
+            outState.putString(
+                INLINE_TEXT_CONTENT_KEY,
+                _binding?.inlineTextEditor?.text?.toString() ?: session.content,
+            )
+            outState.putInt(INLINE_TEXT_COLOR_KEY, session.colorArgb)
+            outState.putFloat(INLINE_TEXT_SIZE_KEY, session.textSizeSp)
+        }
         super.onSaveInstanceState(outState)
     }
 
@@ -2029,6 +2314,8 @@ class CanvasFragment : Fragment() {
         binding.aiAssistantContent.aiResponseScroll.removeCallbacks(aiResponseAutoScroll)
         renderedAiResponse = null
         renderedAiPanelVisible = false
+        inlineEditorBackgroundColor = null
+        inlineTextBackCallback = null
         _binding = null
         super.onDestroyView()
     }
@@ -2055,6 +2342,24 @@ class CanvasFragment : Fragment() {
         val isVisible: Boolean
             get() = showCopy || showPaste || showDelete || showEdit
     }
+
+    private data class InlineTextSession(
+        val pageId: Long,
+        val originalTextId: Long?,
+        val x: Float,
+        val y: Float,
+        val boxWidth: Float,
+        val content: String,
+        val colorArgb: Int,
+        val textSizeSp: Float,
+    )
+
+    private data class PendingInlineTextCommit(
+        val textId: Long?,
+        val content: String,
+        val session: InlineTextSession,
+        val existingTextIds: Set<Long>,
+    )
 
     private companion object {
         const val PDF_RENDER_BUCKET = 512
@@ -2083,6 +2388,15 @@ class CanvasFragment : Fragment() {
         const val PRELOAD_EDGE = 1024
         const val PRELOAD_IMAGE_EDGE = 512
         const val PAGE_PANEL_OPEN_KEY = "canvas_page_panel_open"
+        const val INVALID_TEXT_ID = -1L
+        const val INLINE_TEXT_PAGE_ID_KEY = "canvas_inline_text_page_id"
+        const val INLINE_TEXT_ORIGINAL_ID_KEY = "canvas_inline_text_original_id"
+        const val INLINE_TEXT_X_KEY = "canvas_inline_text_x"
+        const val INLINE_TEXT_Y_KEY = "canvas_inline_text_y"
+        const val INLINE_TEXT_WIDTH_KEY = "canvas_inline_text_width"
+        const val INLINE_TEXT_CONTENT_KEY = "canvas_inline_text_content"
+        const val INLINE_TEXT_COLOR_KEY = "canvas_inline_text_color"
+        const val INLINE_TEXT_SIZE_KEY = "canvas_inline_text_size"
         val SHAPE_TOOLS = setOf(DrawingTool.LINE, DrawingTool.RECTANGLE, DrawingTool.CIRCLE)
         val DRAWING_OPTION_TOOLS = setOf(
             DrawingTool.PEN,

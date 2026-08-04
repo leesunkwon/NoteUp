@@ -37,6 +37,15 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
+data class InlineTextEditorPlacement(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val textSizePx: Float,
+    val colorArgb: Int,
+    val backgroundArgb: Int,
+)
+
 class DrawingCanvasView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -110,6 +119,7 @@ class DrawingCanvasView @JvmOverloads constructor(
     private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat()
     private val storedStrokes = mutableListOf<Stroke>()
     private val storedTexts = mutableListOf<CanvasText>()
+    private var inlineEditingTextId: Long? = null
     private val storedImages = mutableListOf<CanvasImage>()
     private var imageBitmaps: Map<Long, Bitmap> = emptyMap()
     private val pendingStrokes = mutableListOf<PendingCanvasStroke>()
@@ -193,6 +203,34 @@ class DrawingCanvasView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setInlineEditingTextId(textId: Long?) {
+        if (inlineEditingTextId == textId) return
+        inlineEditingTextId = textId
+        rebuildStrokeBitmap()
+        clearAreaPreviewBitmap()
+        invalidate()
+    }
+
+    fun inlineTextEditorPlacement(
+        x: Float,
+        y: Float,
+        boxWidth: Float,
+        textSizeSp: Float,
+        colorArgb: Int,
+    ): InlineTextEditorPlacement {
+        val pageRect = pageContentRect()
+        return InlineTextEditorPlacement(
+            left = (pageRect.left + x * pageRect.width()) * viewport.scale + viewport.offsetX,
+            top = (pageRect.top + y * pageRect.height()) * viewport.scale + viewport.offsetY,
+            width = boxWidth * pageRect.width() * viewport.scale,
+            textSizePx = textSizeSp * resources.displayMetrics.density * viewport.scale,
+            colorArgb = displayColor(colorArgb),
+            backgroundArgb = context.getColor(
+                if (usesDarkPaper()) R.color.noteup_dark_page else R.color.noteup_page,
+            ),
+        )
+    }
+
     fun setImages(images: List<CanvasImage>, bitmaps: Map<Long, Bitmap>) {
         storedImages.clear()
         storedImages.addAll(images)
@@ -255,6 +293,7 @@ class DrawingCanvasView @JvmOverloads constructor(
         if (currentPageId != pageId) {
             cancelActiveStroke()
             lastTextTapId = null
+            inlineEditingTextId = null
             pendingStrokes.clear()
             erasedInGesture.clear()
             eraserPath.clear()
@@ -1432,7 +1471,10 @@ class DrawingCanvasView @JvmOverloads constructor(
             activePoints.drop(1).forEach { path.lineTo(pageX(it.x), pageY(it.y)) }
             canvas.drawPath(path, selectionPaint)
         }
-        if (!selectionBounds.isEmpty) {
+        val editingOnlySelectedText = inlineEditingTextId != null &&
+            selection.strokes.isEmpty() && selection.images.isEmpty() &&
+            selection.texts.singleOrNull()?.id == inlineEditingTextId
+        if (!selectionBounds.isEmpty && !editingOnlySelectedText) {
             canvas.drawRect(selectionBounds, selectionPaint)
             canvas.drawCircle(selectionBounds.right, selectionBounds.bottom, HANDLE_RADIUS_DP * resources.displayMetrics.density, handlePaint)
         }
@@ -1469,7 +1511,8 @@ class DrawingCanvasView @JvmOverloads constructor(
             canvas.save()
             canvas.translate(pageRect.left, pageRect.top)
             val elements: List<Pair<Int, Any>> = storedStrokes.map { it.strokeIndex to it as Any } +
-                storedTexts.map { it.elementIndex to it as Any } +
+                storedTexts.filterNot { it.id == inlineEditingTextId }
+                    .map { it.elementIndex to it as Any } +
                 storedImages.map { it.elementIndex to it as Any }
             elements.sortedBy { it.first }.forEach { (_, element) ->
                 when (element) {
@@ -1520,7 +1563,8 @@ class DrawingCanvasView @JvmOverloads constructor(
             .filterNot { it.id in hiddenIds }
             .filter { storedBounds[it.id]?.let { bounds -> RectF.intersects(bounds, currentDirty) } == true }
             .map { it.strokeIndex to it as Any } +
-            storedTexts.filter { RectF.intersects(textBounds(it), currentDirty) }
+            storedTexts.filterNot { it.id == inlineEditingTextId }
+                .filter { RectF.intersects(textBounds(it), currentDirty) }
                 .map { it.elementIndex to it as Any } +
             storedImages.filter { RectF.intersects(imageBounds(it), currentDirty) }
                 .map { it.elementIndex to it as Any }
